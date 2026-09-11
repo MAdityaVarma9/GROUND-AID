@@ -1,11 +1,16 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>GROUND AID — Smart Farming Platform for India</title>
-<meta name="description" content="GROUND AID: live weather, soil analysis, crop intelligence, disease scanning, fertilizer planning, mandi context and a separate farm labour marketplace for Indian farmers.">
+<title>GROUND AID 2.0 V1.0 — Project Ground Aid | Soil Guardians</title>
+<meta name="description" content="GROUND AID 2.0 V1.0 — Project Ground Aid by Soil Guardians. Smart farming tools for soil, crops, disease, weather, fertilizer, markets, labour, schemes and farm economics.">
 <meta name="theme-color" content="#2D6A4F">
+<meta name="author" content="M. Aditya Varma">
+<meta name="application-name" content="GROUND AID 2.0 V1.0">
+<meta name="project" content="Ground Aid">
+<meta name="team" content="Soil Guardians">
 <link rel="manifest" href='data:application/manifest+json,{"name":"Ground-Aid","short_name":"Ground-Aid","start_url":".","display":"standalone","background_color":"%23F7F3E8","theme_color":"%232D6A4F"}'>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232D6A4F'/%3E%3Cpath d='M32 50c0-14 8-24 18-28-2 16-8 26-18 28z' fill='%23F7F3E8'/%3E%3Cpath d='M32 50c0-14-8-24-18-28 2 16 8 26 18 28z' fill='%23A7C957'/%3E%3C/svg%3E">
 
@@ -1059,94 +1064,164 @@ body.hc .page::before{display:none}
   .qa:hover,.wx-day:hover,.btn-primary:hover{transform:none}
 }
 
+</style>
 
+<style id="ground-aid-visual-refresh">
 /* ============================================================
-   GROUND AID — MODERN AGRI PLATFORM VISUAL SYSTEM
-   Inspired by contemporary SaaS/education landing-page layouts:
-   large type, dark-green hero, stat bands, glass cards, clear CTAs.
-   Functionality remains unchanged except for explicitly added modules.
+   GROUND AID — VISUAL REFRESH ONLY
+   Inspired by the clean, premium editorial feel of modern product
+   sites. No IDs, data attributes, JS hooks, forms or functionality
+   are changed here; this block is presentation-only.
    ============================================================ */
 :root{
-  --ga-ink:#0b1711;
-  --ga-deep:#092218;
-  --ga-green:#2f7d4f;
-  --ga-lime:#b7d968;
-  --ga-cream:#f6f7ef;
-  --ga-border:rgba(17,45,31,.12);
+  --bg:#f5f7f2;
+  --bg-alt:#e9eee6;
+  --surface:#ffffff;
+  --surface-2:#f8faf7;
+  --ink:#101a15;
+  --ink-2:#465149;
+  --muted:#718078;
+  --line:#dce4dd;
+  --line-2:#c8d4cb;
+  --green:#0f5132;
+  --green-dark:#083a24;
+  --green-soft:#dceee4;
+  --lime:#b7d96a;
+  --lime-soft:#edf5d8;
+  --terracotta:#c96d43;
+  --terracotta-soft:#f7e6dd;
+  --amber:#a66a12;
+  --amber-soft:#faefd9;
+  --red:#a83b34;
+  --red-soft:#f7e1df;
+  --blue:#2a648a;
+  --blue-soft:#e2eef5;
+  --radius:18px;
+  --radius-sm:12px;
+  --radius-lg:28px;
+  --shadow:0 8px 30px rgba(16,34,24,.06);
+  --shadow-lg:0 28px 70px rgba(16,34,24,.13);
+  --font:'Inter','Noto Sans Bengali','Noto Sans Devanagari',system-ui,-apple-system,sans-serif;
+  --font-head:'Fraunces','Noto Sans Bengali','Noto Sans Devanagari',Georgia,serif;
 }
-body{
-  background:
-    radial-gradient(circle at 10% 0%,rgba(183,217,104,.12),transparent 26%),
-    linear-gradient(135deg,#f8faf4 0%,#f1f6ed 52%,#edf3e9 100%);
-}
-.app-header{
-  background:rgba(246,249,242,.88)!important;
-  box-shadow:0 12px 35px rgba(10,35,22,.07);
-}
-.logo{font-weight:800;letter-spacing:-.04em}
-.nav-tab{font-weight:600}
-.page{padding-top:30px}
-.hero{
-  min-height:390px;
-  border-radius:28px;
-  padding:42px 34px!important;
-  background:
-    radial-gradient(circle at 88% 18%,rgba(183,217,104,.42),transparent 24%),
-    radial-gradient(circle at 15% 100%,rgba(70,145,91,.18),transparent 28%),
-    linear-gradient(135deg,#071d14 0%,#103d2a 48%,#28704a 100%)!important;
-  box-shadow:0 28px 70px rgba(9,34,24,.22)!important;
-}
-.hero h1{font-size:clamp(2.45rem,6vw,4.4rem)!important;max-width:13ch!important;letter-spacing:-.055em!important}
-.hero .sub{font-size:1.02rem;line-height:1.7}
-.hero-cta .btn{padding:13px 21px;border-radius:13px}
-.card,.module,.qa,.crop-card,.job,.scheme{
-  border-radius:18px!important;
-  border-color:var(--ga-border)!important;
-  box-shadow:0 12px 35px rgba(10,35,22,.055)!important;
-}
-.card:hover,.module:hover,.crop-card:hover,.job:hover,.scheme:hover{transform:translateY(-2px)}
-.sec-head h2{font-size:clamp(1.6rem,3.5vw,2.35rem)}
-.qa{padding:20px 17px!important;min-height:155px}
-.qa .t{font-size:.96rem}
-.btn-primary{background:linear-gradient(135deg,#276f49,#184d34)!important}
-.btn{border-radius:12px}
-.farm-kpi{border-radius:16px!important}
-.data-badge.live::before{
-  content:"";width:7px;height:7px;border-radius:50%;background:#2f9d5b;box-shadow:0 0 0 4px rgba(47,157,91,.12)
-}
-.live-weather-bar{
-  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  margin-top:12px;padding:10px 12px;border-radius:12px;
-  background:rgba(47,125,79,.07);border:1px solid rgba(47,125,79,.14);
-  font-size:.72rem;color:var(--muted)
-}
-.live-weather-bar strong{color:var(--ga-green)}
-.worker-card{
-  background:linear-gradient(145deg,#fff,#f4f8f0);
-  border:1px solid rgba(45,106,79,.13);
-  border-radius:18px;padding:18px;
-  box-shadow:0 12px 30px rgba(22,33,27,.06);
-}
-.worker-card:hover{border-color:rgba(45,106,79,.35);transform:translateY(-3px)}
-.worker-avatar{
-  width:48px;height:48px;border-radius:14px;display:grid;place-items:center;
-  background:linear-gradient(145deg,#dcebdc,#eef4d7);font-size:1.35rem;font-weight:800;color:#245a42;
-}
-.worker-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
-.worker-tag{padding:5px 9px;border-radius:999px;background:#eef5e9;color:#315c42;font-size:.67rem;font-weight:700}
-.worker-rate{font-family:var(--font-head);font-size:1.15rem;font-weight:700;color:#2d6a4f}
-.crop-count-banner{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-  margin-bottom:16px;padding:15px 17px;border-radius:16px;
-  background:linear-gradient(135deg,#103d2a,#2d6a4f);color:#fff;
-}
-.crop-count-banner b{font-size:1.35rem;font-family:var(--font-head)}
-@media(max-width:640px){
-  .hero{min-height:360px;padding:30px 22px!important}
-  .hero h1{font-size:2.35rem!important}
-}
+html{background:var(--bg);}
+body{background:radial-gradient(circle at 10% 0%,rgba(183,217,106,.13),transparent 28rem),var(--bg);color:var(--ink);}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background-image:linear-gradient(rgba(15,81,50,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(15,81,50,.025) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,#000,transparent 70%);}
+.shell{max-width:1280px;padding-left:22px;padding-right:22px;}
+@media(min-width:768px){.shell{padding-left:38px;padding-right:38px;}}
+.page{padding:34px 0 130px;}
 
+/* Header / navigation */
+.app-header{background:rgba(245,247,242,.82);border-bottom:1px solid rgba(200,212,203,.72);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);}
+.app-header .shell{height:76px;gap:16px;}
+.logo{font-family:var(--font);font-size:1rem;letter-spacing:-.03em;}
+.logo-mark{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#123f2b,#0b6a43);box-shadow:0 10px 22px rgba(15,81,50,.22);}
+.logo-mark svg{width:22px;height:22px;}
+.logo em{color:var(--lime);margin:0 1px;}
+.logo small{font-size:.55rem;letter-spacing:.12em;margin-top:1px;}
+.loc-btn{background:rgba(255,255,255,.78);border-color:var(--line);padding:9px 14px;border-radius:999px;box-shadow:0 3px 12px rgba(16,34,24,.035);}
+.icon-btn{width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,.78);box-shadow:0 3px 12px rgba(16,34,24,.035);}
+.icon-btn:hover,.loc-btn:hover{border-color:#9ab7a6;background:#fff;transform:translateY(-1px);}
+.nav-bar{top:76px;background:rgba(245,247,242,.78);border-bottom:1px solid var(--line);backdrop-filter:blur(18px);}
+.nav-bar .shell{gap:5px;}
+.nav-tab{padding:13px 15px;border-radius:12px 12px 0 0;border-bottom:2px solid transparent;}
+.nav-tab:hover{background:rgba(255,255,255,.65);color:var(--green);}
+.nav-tab.on{background:rgba(220,238,228,.65);border-bottom-color:var(--green);color:var(--green-dark);}
+
+/* Hero */
+.hero{position:relative;overflow:hidden;border-radius:34px;min-height:390px;margin-bottom:24px;background:linear-gradient(135deg,#082f20 0%,#0f5132 52%,#174f35 100%);box-shadow:0 30px 80px rgba(8,58,36,.22);isolation:isolate;}
+.hero::before{content:"";position:absolute;width:520px;height:520px;right:-130px;top:-220px;border-radius:50%;background:radial-gradient(circle,rgba(183,217,106,.35),rgba(183,217,106,0) 66%);z-index:-1;}
+.hero::after{content:"";position:absolute;inset:auto -8% -55% 35%;height:380px;border-radius:50%;background:rgba(255,255,255,.045);transform:rotate(-8deg);z-index:-1;}
+.hero-inner{padding:54px 38px 58px;max-width:820px;}
+.hero .greet{display:inline-flex;align-items:center;gap:8px;color:#d8eadf;font-size:.76rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;margin-bottom:18px;}
+.hero .greet::before{content:"";width:24px;height:1px;background:var(--lime);}
+.hero h1{font-family:var(--font-head);font-size:clamp(2.7rem,6vw,5.5rem);line-height:.94;letter-spacing:-.045em;color:#fff;max-width:760px;margin-bottom:22px;}
+.hero .sub{max-width:690px;color:#c9ddd2;font-size:1rem;line-height:1.75;}
+.hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px;}
+.btn{border-radius:12px;min-height:42px;padding:10px 15px;font-weight:650;transition:transform .18s,box-shadow .18s,background .18s,border-color .18s;}
+.btn:hover{transform:translateY(-2px);}
+.btn-primary{background:var(--green);box-shadow:0 8px 18px rgba(15,81,50,.16);}
+.btn-primary:hover{background:var(--green-dark);box-shadow:0 12px 26px rgba(15,81,50,.22);}
+.btn-light{background:#fff;color:var(--green-dark);box-shadow:0 12px 28px rgba(0,0,0,.14);}
+.btn-outline-w{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.07);color:#fff;backdrop-filter:blur(10px);}
+.btn-outline-w:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.65);}
+.btn-ghost{border:1px solid var(--line);background:#fff;color:var(--ink-2);}
+.btn-ghost:hover{border-color:#9ab7a6;color:var(--green);background:#fbfdfb;}
+@media(max-width:620px){.hero{border-radius:25px;min-height:350px}.hero-inner{padding:40px 24px}.hero h1{font-size:2.75rem}.hero .sub{font-size:.92rem}.hero-cta .btn{width:100%;justify-content:center;}}
+
+/* Section headings */
+.sec-head{margin-bottom:18px;}
+.sec-head .eyebrow,.eyebrow{color:var(--green);font-size:.65rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;}
+.sec-head h2{font-size:clamp(1.7rem,3vw,2.45rem);letter-spacing:-.035em;margin-top:5px;}
+.sec-head p{color:var(--muted);max-width:700px;margin-top:7px;}
+
+/* Cards / modules */
+.card,.module{border:1px solid rgba(200,212,203,.78);background:rgba(255,255,255,.9);box-shadow:var(--shadow);}
+.card{border-radius:20px;padding:20px;}
+.module{border-radius:28px;padding:25px;}
+.card:hover,.module:hover{box-shadow:0 14px 38px rgba(16,34,24,.075);}
+.card.flat{background:var(--surface-2);box-shadow:none;}
+.notice{border-radius:16px!important;border:1px solid var(--line)!important;}
+
+/* Home snapshot and quick actions */
+.qa-grid{gap:12px;}
+.qa{position:relative;text-align:left;background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px;min-height:142px;box-shadow:0 5px 18px rgba(16,34,24,.045);transition:transform .18s,box-shadow .18s,border-color .18s;}
+.qa::after{content:"↗";position:absolute;right:16px;top:15px;color:#a0aaa4;font-size:1rem;}
+.qa:hover{transform:translateY(-4px);border-color:#a7bdae;box-shadow:0 18px 32px rgba(16,34,24,.09);}
+.qa .ic{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;margin-bottom:15px;}
+.qa .ic svg{width:21px;height:21px;}
+.qa .t{display:block;font-weight:750;color:var(--ink);font-size:.95rem;}
+.qa .d{display:block;color:var(--muted);font-size:.74rem;line-height:1.45;margin-top:4px;max-width:180px;}
+.ic-green{background:#e1f0e7;color:var(--green);}.ic-lime{background:#eef5d8;color:#617c18}.ic-terra{background:#f8e7de;color:var(--terracotta)}.ic-amber{background:#faefd9;color:var(--amber)}
+
+/* Form controls */
+.input,.select,textarea,input[type="text"],input[type="number"],input[type="tel"],input[type="date"],input[type="search"]{border:1px solid var(--line);background:#fbfcfa;border-radius:12px;min-height:44px;transition:border-color .18s,box-shadow .18s,background .18s;}
+.input:focus,.select:focus,textarea:focus,input:focus{border-color:#77a48b;box-shadow:0 0 0 4px rgba(15,81,50,.09);background:#fff;outline:none;}
+.field label{font-size:.72rem;font-weight:700;color:var(--ink-2);letter-spacing:.01em;margin-bottom:6px;}
+
+/* Data / metrics */
+.metric{border-radius:16px!important;border-color:var(--line)!important;background:linear-gradient(180deg,#fff,#fafcf9)!important;}
+.data-badge{border-radius:999px!important;font-weight:750!important;letter-spacing:.03em;}
+.data-badge.live{background:#e0f2e7!important;color:#14643e!important;}
+.data-badge.sample{background:#f1f3f0!important;color:#69766f!important;}
+
+/* Tables / lists */
+table{border-collapse:separate!important;border-spacing:0 7px!important;}
+th{color:var(--muted)!important;font-size:.68rem!important;letter-spacing:.08em;text-transform:uppercase;}
+td{background:#fff!important;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+td:first-child{border-left:1px solid var(--line);border-radius:12px 0 0 12px;}
+td:last-child{border-right:1px solid var(--line);border-radius:0 12px 12px 0;}
+
+/* Chat / result blocks */
+.chatbox{background:#f3f7f3;border:1px solid var(--line);border-radius:16px;padding:7px;display:flex;gap:7px;}
+.chatbox .input{border:none;background:transparent;box-shadow:none;flex:1;}
+.chatbox .btn{min-height:40px;}
+.result-block{border:1px solid var(--line);border-radius:16px;background:#fbfdfb;padding:15px;margin-top:10px;}
+
+/* Sheets / overlays */
+.sheet{border-radius:28px 28px 0 0!important;border:1px solid var(--line)!important;box-shadow:0 -30px 80px rgba(16,34,24,.16)!important;background:rgba(255,255,255,.97)!important;}
+.sheet-grip{background:#cbd5ce!important;border-radius:99px!important;}
+
+/* Mobile nav */
+.bottom-nav{background:rgba(255,255,255,.92);border-top:1px solid var(--line);box-shadow:0 -10px 30px rgba(16,34,24,.08);backdrop-filter:blur(20px);}
+.bn-item{padding:10px 4px 9px;font-weight:650;}
+.bn-item.on{color:var(--green);}
+
+/* Small decorative details */
+.skeleton{border-radius:14px!important;background:linear-gradient(90deg,#edf1ed,#f8faf8,#edf1ed)!important;background-size:200% 100%!important;animation:gaShimmer 1.5s infinite!important;}
+@keyframes gaShimmer{to{background-position:-200% 0;}}
+hr{border:0;border-top:1px solid var(--line);}
+::selection{background:var(--lime);color:var(--ink);}
+
+/* Preserve high-contrast accessibility while retaining the new geometry. */
+body.hc{background:#000;}
+body.hc::before{display:none;}
+body.hc .app-header,body.hc .nav-bar{background:#050505;border-color:#3a3a3a;}
+body.hc .hero{box-shadow:none;border:2px solid #7cffb2;}
+
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}}
 </style>
+
 </head>
 
 <body>
@@ -1161,7 +1236,7 @@ body{
           <path d="M12 21C12 15 8.5 11 4 9c1 7 3.5 11 8 12z" fill="#A7C957"/>
         </svg>
       </span>
-      <span>Ground<em>—</em>Aid<small data-i18n="tagline">Smart farming</small></span>
+      <span>GROUND<em>—</em>AID<small data-i18n="tagline">2.0 V1.0 · Smart farming</small></span>
     </a>
 
     <div class="header-spacer"></div>
@@ -1255,9 +1330,7 @@ body{
           <div class="eyebrow" style="font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);" data-i18n="todayWeather">Today's weather</div>
           <div style="font-size:.78rem;color:var(--muted);" id="wxSnapLoc">Kolkata, West Bengal</div>
         </div>
-        <div style="display:flex;gap:7px;flex-wrap:wrap;">
-          <button class="btn btn-ghost btn-sm" id="useMyLocation" type="button">📍 Use my location</button>
-          <button class="btn btn-ghost btn-sm" data-nav="weather">
+        <button class="btn btn-ghost btn-sm" data-nav="weather">
           <span data-i18n="fullForecast">7-day forecast</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="14" height="14"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
@@ -1626,57 +1699,68 @@ body{
     <div class="sec-head">
       <div class="eyebrow" data-i18n="labEyebrow">Module 07</div>
       <h2 data-i18n="labTitle">Farmer ↔ labour matching</h2>
-      <p>Three separate actions: find available work, hire a worker, or post a new job.</p>
+      <p data-i18n="labSub">Post work you need done, or find work nearby. Everything stays on your device.</p>
     </div>
 
     <div class="chips" style="margin-bottom:16px;" id="labTabs">
-      <button class="chip on" type="button" data-lab="find">Find work</button>
-      <button class="chip" type="button" data-lab="hire">Hire workers</button>
-      <button class="chip" type="button" data-lab="post">Post a job</button>
+      <button class="chip on" type="button" data-lab="find" data-i18n="findWork">Find work</button>
+      <button class="chip" type="button" data-lab="hire" data-i18n="hireWorkers">Hire workers</button>
+      <button class="chip" type="button" data-lab="post" data-i18n="postJob">Post a job</button>
     </div>
 
-    <!-- FIND WORK = jobs posted by farmers -->
     <div id="labFind">
-      <div class="module" style="margin-bottom:14px;">
-        <div class="sec-head" style="margin-bottom:10px;">
-          <div class="eyebrow">JOB BOARD</div>
-          <h3>Find work near you</h3>
-          <p>Browse farmer-posted work opportunities. This is intentionally different from the worker directory.</p>
-        </div>
-        <div id="labList"></div>
-      </div>
+      <div class="notice info" style="margin-bottom:14px;">Find farmers' posted work opportunities. This is separate from the worker directory used for hiring.</div>
+      <div id="labList"></div>
     </div>
 
-    <!-- HIRE WORKERS = worker directory -->
     <div id="labHire" hidden>
-      <div class="module">
+      <div class="module" style="margin-bottom:14px;">
         <div class="sec-head">
           <div class="eyebrow">WORKER DIRECTORY</div>
-          <h3>Hire available workers</h3>
-          <p>Search people who are offering farm labour. Hiring a worker does not create a job post.</p>
+          <h3>Hire a worker</h3>
+          <p>Add your availability and skills so farmers can contact you directly.</p>
         </div>
         <div class="field-row">
           <div class="field">
-            <label for="workerSearch">Search skill / name</label>
-            <input class="input" id="workerSearch" placeholder="e.g. harvesting, transplanting">
+            <label for="w-name">Worker / team name</label>
+            <input class="input" id="w-name" placeholder="e.g. Raju & team">
           </div>
           <div class="field">
-            <label for="workerArea">Village / district</label>
-            <input class="input" id="workerArea" placeholder="e.g. Burdwan">
+            <label for="w-loc">Village / block</label>
+            <input class="input" id="w-loc" placeholder="e.g. Burdwan">
           </div>
         </div>
-        <div id="workerList"></div>
+        <div class="field-row">
+          <div class="field">
+            <label for="w-skill">Main skill</label>
+            <select class="select" id="w-skill">
+              <option>General farm work</option><option>Ploughing</option><option>Sowing</option>
+              <option>Transplanting</option><option>Weeding</option><option>Harvesting</option>
+              <option>Spraying</option><option>Pruning</option><option>Machine operation</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="w-pay">Expected daily wage (₹)</label>
+            <input class="input" type="number" id="w-pay" value="450" min="0" step="10">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="w-workers">Team size</label>
+            <input class="input" type="number" id="w-workers" value="1" min="1" max="100">
+          </div>
+          <div class="field">
+            <label for="w-phone">Contact number</label>
+            <input class="input" type="tel" id="w-phone" placeholder="10-digit mobile">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" id="wAddBtn">Add to worker directory</button>
       </div>
+      <div id="workerList"></div>
     </div>
 
-    <!-- POST JOB = farmer creates a requirement -->
     <div id="labPost" hidden>
       <div class="module">
-        <div class="sec-head">
-          <div class="eyebrow">POST A REQUIREMENT</div>
-          <h3>Post a farm job</h3>
-          <p>Create a work requirement so workers can contact you. This is separate from “Hire workers”.</p>
-        </div>
         <div class="field">
           <label for="j-title" data-i18n="jobTitle">Work needed</label>
           <input class="input" id="j-title" placeholder="e.g. Paddy transplanting — 2 acres" data-i18n-ph="jobTitlePh">
@@ -1817,6 +1901,21 @@ body{
       <h3>Configured integrations</h3>
       <div id="integrationStatus" style="margin-top:10px;"></div>
       <div class="trust-strip"><b>Security:</b> never place private API keys or Supabase service-role keys in this HTML. Browser-safe/public configuration belongs in the central config only.</div>
+<div class="card" style="margin-top:14px;">
+  <h3>Reference sources</h3>
+  <p class="inline-help" style="margin-top:6px;">
+    Government and institutional references used by the app include the Government of India PM-KISAN portal,
+    Soil Health Card portal, PMFBY portal and e-NAM. Live weather is retrieved from Open-Meteo.
+    Market records are labelled sample unless a live data.gov.in market feed is configured.
+  </p>
+  <div class="trust-strip">
+    <a href="https://pmkisan.gov.in" target="_blank" rel="noopener">PM-KISAN</a>
+    <a href="https://soilhealth.dac.gov.in" target="_blank" rel="noopener">Soil Health Card</a>
+    <a href="https://pmfby.gov.in" target="_blank" rel="noopener">PMFBY</a>
+    <a href="https://enam.gov.in" target="_blank" rel="noopener">e-NAM</a>
+    <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>
+  </div>
+</div>
     </div>
   </section>
 
@@ -1863,20 +1962,34 @@ body{
       </button>
     </div>
 
-    <div class="card">
+          <div class="card" id="projectIdentityCard" style="margin-top:14px;">
+        <h3 style="margin-bottom:10px;">Project identity</h3>
+        <div class="kv"><span class="k">Project</span><span class="v">Ground Aid</span></div>
+        <div class="kv"><span class="k">Product</span><span class="v">GROUND AID 2.0 V1.0</span></div>
+        <div class="kv"><span class="k">Team</span><span class="v">Soil Guardians</span></div>
+        <div class="kv"><span class="k">Creator / User</span><span class="v">M. Aditya Varma</span></div>
+      </div>
+
+<div class="card">
       <h3 style="margin-bottom:10px;" data-i18n="about">About Ground-Aid</h3>
       <p style="font-size:.84rem;color:var(--ink-2);line-height:1.6;">
         Built for small and marginal farmers in West Bengal. Soil analysis, crop advice, disease scanning,
         weather, fertilizer dosage, mandi rates, labour matching and scheme discovery — in one place, in your language.
       </p>
       <div class="divider"></div>
-      <div class="kv"><span class="k" data-i18n="version">Version</span><span class="v">2.0 (hackathon build)</span></div>
+      <div class="kv"><span class="k" data-i18n="version">Version</span><span class="v">GROUND AID 2.0 V1.0</span></div>
       <div class="kv"><span class="k" data-i18n="weatherSource">Weather source</span><span class="v">Open-Meteo</span></div>
-      <div class="kv"><span class="k" data-i18n="madeBy">Team</span><span class="v">Soil Guardians, IEM Kolkata</span></div>
+      <div class="kv"><span class="k" data-i18n="madeBy">Team</span><span class="v">Soil Guardians · M. Aditya Varma</span></div>
     </div>
   </section>
 
 </main>
+
+<footer class="shell" style="padding:20px 18px 100px;color:var(--muted);font-size:.72rem;text-align:center;">
+  <div style="font-weight:800;color:var(--green-dark);letter-spacing:.04em;">GROUND AID 2.0 V1.0</div>
+  <div style="margin-top:4px;">Project Ground Aid · Team Soil Guardians · Creator / User: M. Aditya Varma</div>
+  <div style="margin-top:5px;">Data labels distinguish live/API, cached, calculated/modelled and sample values.</div>
+</footer>
 
 <!-- ================= BOTTOM NAV ================= -->
 <nav class="bottom-nav" id="bottomNav"></nav>
@@ -1936,7 +2049,7 @@ const sharedBackend={
     const r=await fetch(u,{method:'DELETE',headers:this.headers()}); if(!r.ok) throw Error('Shared delete '+r.status); return true;
   }
 };
-function normalizeJob(j){return {id:j.id||('job_'+Date.now()),type:'job',title:String(j.title||''),loc:String(j.loc||''),phone:String(j.phone||''),pay:num(j.pay,450),when:String(j.when||''),workers:num(j.workers,1),note:String(j.note||''),posted:j.posted||new Date().toISOString()};}
+function normalizeJob(j){return {id:j.id||('job_'+Date.now()),title:String(j.title||''),loc:String(j.loc||''),phone:String(j.phone||''),pay:num(j.pay,450),when:String(j.when||''),workers:num(j.workers,1),note:String(j.note||''),posted:j.posted||new Date().toISOString()};}
 async function syncSharedJobs(){
   if(!sharedBackend.enabled()) return;
   try{const remote=await sharedBackend.listJobs();if(Array.isArray(remote)){store.set('jobs',remote.map(normalizeJob));renderJobs();}}
@@ -2663,77 +2776,59 @@ const CROPS = [
           hi:'बंगाल में सालभर होता है। तना छेदक देखें।'} }
 ];
 
-/* Expanded India-wide crop catalogue. These entries are for crop discovery/
-   compatibility filtering; fertilizer prescriptions remain in FERT_CROPS. */
-const INDIA_MAJOR_CROPS = [
- ['pigeon_pea','Pigeon pea (Arhar/Tur)','अरहर/तूर','তুর ডাল','kharif','medium','150–210 days','6.0–8.0'],
- ['mung_bean','Green gram (Moong)','मूंग','মুগ ডাল','kharif','low','60–90 days','6.0–7.5'],
- ['black_gram','Black gram (Urad)','उड़द','বিউলি ডাল','kharif','low','70–100 days','6.0–7.5'],
- ['cowpea','Cowpea (Lobia)','लोबिया','বরবটি/লোবিয়া','kharif','low','70–100 days','5.5–7.5'],
- ['field_pea','Field pea','मटर','মটর','rabi','medium','90–120 days','6.0–7.5'],
- ['sesame','Sesame (Til)','तिल','তিল','kharif','low','80–110 days','5.5–8.0'],
- ['sunflower','Sunflower','सूरजमुखी','সূর্যমুখী','any','medium','90–120 days','6.0–7.5'],
- ['safflower','Safflower','कुसुम','কুসুম','rabi','low','110–140 days','6.0–8.0'],
- ['castor','Castor','अरंडी','রেড়ি','kharif','medium','150–210 days','6.0–8.0'],
- ['linseed','Linseed (Flax)','अलसी','তিসি','rabi','low','120–150 days','5.5–7.5'],
- ['sorghum','Sorghum (Jowar)','ज्वार','জোয়ার','kharif','low','100–130 days','5.5–8.0'],
- ['pearl_millet','Pearl millet (Bajra)','बाजरा','বাজরা','kharif','low','75–100 days','6.0–7.5'],
- ['finger_millet','Finger millet (Ragi)','रागी','রাগি','kharif','low','95–120 days','5.5–7.5'],
- ['foxtail_millet','Foxtail millet','कंगनी','কাকুন','kharif','low','80–110 days','5.5–7.5'],
- ['little_millet','Little millet','कुटकी','কুটকি','kharif','low','90–120 days','5.0–7.5'],
- ['barnyard_millet','Barnyard millet','सांवा','শ্যামা','kharif','low','80–100 days','5.5–7.5'],
- ['proso_millet','Proso millet','चेना','চীনা','kharif','low','70–100 days','5.5–7.5'],
- ['amaranth','Amaranth','राजगीरा','নটে/আমরান্থ','any','low','90–120 days','5.5–7.5'],
- ['tobacco','Tobacco','तंबाकू','তামাক','rabi','medium','90–120 days','5.5–7.5'],
- ['chilli','Chilli','मिर्च','লঙ্কা','any','medium','150–210 days','6.0–7.5'],
- ['capsicum','Capsicum','शिमला मिर्च','ক্যাপসিকাম','rabi','medium','120–180 days','6.0–7.0'],
- ['okra','Okra (Bhindi)','भिंडी','ঢেঁড়স','any','medium','90–150 days','6.0–7.5'],
- ['cabbage','Cabbage','पत्तागोभी','বাঁধাকপি','rabi','medium','90–150 days','6.0–7.5'],
- ['cauliflower','Cauliflower','फूलगोभी','ফুলকপি','rabi','medium','90–150 days','6.0–7.5'],
- ['carrot','Carrot','गाजर','গাজর','rabi','medium','90–120 days','6.0–7.0'],
- ['radish','Radish','मूली','মূলা','rabi','low','45–70 days','5.5–7.0'],
- ['beetroot','Beetroot','चुकंदर','বিট','rabi','medium','55–90 days','6.0–7.5'],
- ['spinach','Spinach','पालक','পালং','any','medium','30–60 days','6.0–7.5'],
- ['cucumber','Cucumber','खीरा','শসা','zaid','medium','50–70 days','5.5–7.0'],
- ['bottle_gourd','Bottle gourd','लौकी','লাউ','zaid','medium','120–180 days','6.0–7.5'],
- ['bitter_gourd','Bitter gourd','करेला','করলা','zaid','medium','120–180 days','5.5–7.5'],
- ['ridge_gourd','Ridge gourd','तुरई','ঝিঙে','zaid','medium','120–180 days','6.0–7.5'],
- ['pumpkin','Pumpkin','कद्दू','কুমড়ো','any','medium','90–150 days','5.5–7.5'],
- ['watermelon','Watermelon','तरबूज','তরমুজ','zaid','medium','80–110 days','6.0–7.5'],
- ['muskmelon','Muskmelon','खरबूजा','খরমুজ','zaid','medium','75–100 days','6.0–7.5'],
- ['sweet_potato','Sweet potato','शकरकंद','মিষ্টি আলু','kharif','medium','90–150 days','5.5–6.5'],
- ['taro','Taro/Colocasia','अरबी','কচু','kharif','high','150–210 days','5.5–7.0'],
- ['yam','Yam','जिमीकंद','ওল','kharif','medium','180–300 days','5.5–7.5'],
- ['turmeric','Turmeric','हल्दी','হলুদ','kharif','medium','7–9 months','5.5–7.5'],
- ['black_pepper','Black pepper','काली मिर्च','গোলমরিচ','any','high','Perennial','5.5–6.5'],
- ['banana','Banana','केला','কলা','any','high','Perennial','6.0–7.5'],
- ['mango','Mango','आम','আম','any','medium','Perennial','5.5–7.5'],
- ['guava','Guava','अमरूद','পেয়ারা','any','medium','Perennial','5.5–7.5'],
- ['papaya','Papaya','पपीता','পেঁপে','any','high','Perennial','6.0–7.0'],
- ['pineapple','Pineapple','अनानास','আনারস','kharif','high','15–24 months','4.5–6.5'],
- ['pomegranate','Pomegranate','अनार','ডালিম','any','medium','Perennial','5.5–7.0'],
- ['orange','Citrus/Orange','संतरा','কমলা','any','medium','Perennial','5.5–7.5'],
- ['apple','Apple','सेब','আপেল','any','medium','Perennial','5.5–7.0'],
- ['litchi','Litchi','लीची','লিচু','any','medium','Perennial','5.5–7.5'],
- ['arecanut','Arecanut','सुपारी','সুপারি','any','high','Perennial','5.5–7.0'],
- ['coffee','Coffee','कॉफी','কফি','any','high','Perennial','5.0–6.5']
-];
-for(const [id,en,hi,bn,season,water,duration,phr] of INDIA_MAJOR_CROPS){
-  if(!CROPS.some(c=>c.id===id)) CROPS.push({
-    id,emoji:'🌱',
-    name:{en,hi,bn},
-    ph:phr.split('-').map(Number),
-    n:[30,120],p:[20,70],k:[30,120],m:water==='low'?[30,60]:water==='high'?[55,90]:[40,75],
-    season,water,
-    duration:{en:duration,bn:duration,hi:duration},
-    yield:{en:'Local package of practices required',bn:'স্থানীয় নির্দেশিকা প্রয়োজন',hi:'स्थानीय पैकेज ऑफ प्रैक्टिस आवश्यक'},
-    note:{en:'Use state agriculture/university guidance for final variety, sowing, irrigation and nutrient recommendations.',
-          bn:'জাত, বপন, সেচ ও পুষ্টির চূড়ান্ত সুপারিশের জন্য রাজ্য কৃষি/বিশ্ববিদ্যালয়ের নির্দেশিকা নিন।',
-          hi:'किस्म, बुवाई, सिंचाई और पोषण की अंतिम सलाह के लिए राज्य कृषि/विश्वविद्यालय मार्गदर्शन लें।'}
-  });
-}
-
-CROPS.push(...INDIA_EXTRA_CROPS);
+// Expanded India-wide master crop catalog. Compatibility values are model ranges
+// for ranking only; fertilizer prescriptions must use state/SAU recommendations.
+const INDIA_MASTER_CROPS = [
+  ['barley','🌾','Barley','जौ','যব','rabi','low','110–130 days'],
+  ['oats','🌾','Oats','जई','ওটস','rabi','medium','100–120 days'],
+  ['pigeonpea','🫘','Pigeon Pea (Arhar/Tur)','अरहर/तूर','অড়হর ডাল','kharif','medium','150–180 days'],
+  ['blackgram','🫘','Black Gram (Urad)','उड़द','মাষকলাই','kharif','medium','70–100 days'],
+  ['greengram','🫘','Green Gram (Moong)','मूंग','মুগ ডাল','kharif','low','60–90 days'],
+  ['cowpea','🌱','Cowpea','लोबिया','বরবটি/লোবিয়া','kharif','medium','60–90 days'],
+  ['pea','🫛','Pea','मटर','মটর','rabi','medium','60–100 days'],
+  ['rajma','🫘','Kidney Bean (Rajma)','राजमा','রাজমা','rabi','medium','100–120 days'],
+  ['sesame','🌱','Sesame (Til)','तिल','তিল','kharif','low','80–110 days'],
+  ['sunflower','🌻','Sunflower','सूरजमुखी','সূর্যমুখী','rabi','medium','90–110 days'],
+  ['safflower','🌼','Safflower','कुसुम','কুসুম','rabi','low','110–140 days'],
+  ['linseed','🌱','Linseed (Flax)','अलसी','তিসি','rabi','low','110–140 days'],
+  ['castor','🌱','Castor','अरंडी','রেড়ি','kharif','medium','150–180 days'],
+  ['tobacco','🌿','Tobacco','तंबाकू','তামাক','rabi','medium','90–130 days'],
+  ['chilli','🌶️','Chilli','मिर्च','লঙ্কা','any','medium','120–180 days'],
+  ['okra','🌱','Okra (Bhindi)','भिंडी','ঢেঁড়স','kharif','medium','90–120 days'],
+  ['cabbage','🥬','Cabbage','पत्तागोभी','বাঁধাকপি','rabi','medium','90–120 days'],
+  ['cauliflower','🥦','Cauliflower','फूलगोभी','ফুলকপি','rabi','medium','90–120 days'],
+  ['carrot','🥕','Carrot','गाजर','গাজর','rabi','medium','90–120 days'],
+  ['radish','🌱','Radish','मूली','মূলা','rabi','medium','40–70 days'],
+  ['spinach','🥬','Spinach','पालक','পালং শাক','any','medium','30–60 days'],
+  ['bottle_gourd','🥒','Bottle Gourd','लौकी','লাউ','any','medium','100–140 days'],
+  ['bitter_gourd','🥒','Bitter Gourd','करेला','করলা','any','medium','100–140 days'],
+  ['pumpkin','🎃','Pumpkin','कद्दू','কুমড়া','any','medium','100–150 days'],
+  ['cucumber','🥒','Cucumber','खीरा','শসা','any','medium','60–90 days'],
+  ['watermelon','🍉','Watermelon','तरबूज','তরমুজ','rabi','medium','90–120 days'],
+  ['muskmelon','🍈','Muskmelon','खरबूजा','বাঙ্গি','rabi','medium','80–110 days'],
+  ['banana','🍌','Banana','केला','কলা','any','high','Perennial'],
+  ['mango','🥭','Mango','आम','আম','any','medium','Perennial'],
+  ['guava','🍐','Guava','अमरूद','পেয়ারা','any','medium','Perennial'],
+  ['papaya','🥭','Papaya','पपीता','পেঁপে','any','high','Perennial'],
+  ['pomegranate','🍎','Pomegranate','अनार','ডালিম','any','medium','Perennial'],
+  ['turmeric','🌿','Turmeric','हल्दी','হলুদ','kharif','medium','7–9 months'],
+  ['black_pepper','🌿','Black Pepper','काली मिर्च','গোলমরিচ','any','high','Perennial'],
+  ['arecanut','🌴','Arecanut','सुपारी','সুপারি','any','high','Perennial'],
+  ['coffee','☕','Coffee','कॉफी','কফি','any','high','Perennial'],
+  ['flax','🌱','Flax','अलसी','তিসি','rabi','low','110–140 days'],
+  ['fodder_maize','🌽','Fodder Maize','चारा मक्का','খাদ্য ভুট্টা','any','medium','60–90 days'],
+  ['berseem','🌱','Berseem Fodder','बरसीम','বারসিম','rabi','high','120–180 days'],
+  ['napier','🌿','Napier Grass','नेपियर घास','নেপিয়ার ঘাস','any','high','Perennial']
+].map(x=>({
+  id:x[0],emoji:x[1],indiaWide:true,
+  name:{en:x[2],hi:x[3],bn:x[4]},
+  ph:[5.5,7.5],n:[30,130],p:[20,70],k:[30,120],m:[35,80],
+  season:x[5],water:x[6],
+  duration:{en:x[7],hi:x[7],bn:x[7]},
+  yield:{en:'Model range — verify with local SAU/agriculture department',hi:'स्थानीय कृषि विश्वविद्यालय से सत्यापित करें',bn:'স্থানীয় কৃষি বিশ্ববিদ্যালয়/কৃষি দপ্তর থেকে যাচাই করুন'},
+  note:{en:'India-wide database entry. Suitability and management must be verified for the selected district.',hi:'भारत-व्यापी डेटाबेस प्रविष्टि। चुने हुए जिले के लिए उपयुक्तता सत्यापित करें।',bn:'ভারত-ব্যাপী ডেটাবেস এন্ট্রি। নির্বাচিত জেলার জন্য উপযোগিতা যাচাই করুন।'}
+}));
+CROPS.push(...INDIA_EXTRA_CROPS,...INDIA_MASTER_CROPS);
 
 /* ============================================================
    DATA — FERTILIZER RECOMMENDATIONS (kg/ha)
@@ -3328,6 +3423,7 @@ $('#stateSelect').addEventListener('change', e => {
   selectedState = e.target.value;
   selectedDistrict = (STATE_DISTRICTS[selectedState] || [])[0] || '';
   populateLocationSelectors();
+  syncDiseaseCropToState();
 });
 $('#districtSelect').addEventListener('change', e => { selectedDistrict = e.target.value; });
 $('#saveLocationBtn').addEventListener('click', () => {
@@ -3339,8 +3435,12 @@ $('#saveLocationBtn').addEventListener('click', () => {
 
 /* location context helpers */
 function stateHasCrop(cropId){
-  const ids = STATE_CROP_MAP[selectedState] || [];
-  return ids.includes(cropId);
+  const ids = STATE_CROP_MAP[selectedState];
+  // The database contains India-wide crops. A state map narrows results when
+  // authoritative state context exists; it must never make a crop disappear
+  // from the master database.
+  if(!ids || !ids.length) return true;
+  return ids.includes(cropId) || CROPS.some(c=>c.id===cropId && c.indiaWide===true);
 }
 function renderCropContext(){
   const el = $('#cropResults');
@@ -3468,12 +3568,36 @@ function runCrops(){
 let dxCrop = 'rice';
 let dxDataUrl = null;
 
+function syncDiseaseCropToState(){
+  const stateCropIds = STATE_CROP_MAP[selectedState] || [];
+  const supported = stateCropIds
+    .map(id => id === 'rice_aman' || id === 'rice_boro' ? 'rice' : id)
+    .filter((id, i, arr) => DISEASES[id] && arr.indexOf(id) === i);
+
+  const fallback = Object.keys(DISEASES).find(id => DISEASES[id]?.length);
+  const available = supported.length ? supported : (fallback ? [fallback] : []);
+  if (!available.includes(dxCrop)) dxCrop = available[0] || 'rice';
+
+  const cropMeta = {
+    rice:['🌾','cropRice'], potato:['🥔','cropPotato'], wheat:['🌿','cropWheat'],
+    mustard:['🌼','cropMustard'], tomato:['🍅','cropTomato']
+  };
+
+  const wrap = $('#dxCropChips');
+  if (!wrap) return;
+  wrap.innerHTML = available.map((id, i) => {
+    const meta = cropMeta[id] || ['🌱', 'crop'+cap(id)];
+    return '<button class="chip'+(id === dxCrop ? ' on' : '')+'" type="button" data-crop="'+id+'">'+meta[0]+' <span data-i18n="'+meta[1]+'">'+t(meta[1])+'</span></button>';
+  }).join('');
+}
+
 $('#dxCropChips').addEventListener('click', e => {
   const b = e.target.closest('[data-crop]');
   if (!b) return;
   dxCrop = b.dataset.crop;
   $$('#dxCropChips .chip').forEach(c => c.classList.toggle('on', c === b));
 });
+syncDiseaseCropToState();
 
 $('#dxFile').addEventListener('change', e => {
   const f = e.target.files && e.target.files[0];
@@ -3661,14 +3785,26 @@ let wxCache = null, wxCacheTime = 0;
 
 async function loadWeather(force){
   const now = Date.now();
-  if (!force && wxCache && now - wxCacheTime < 2*60*1000){
-    renderWeather(wxCache);
-    return;
-  }
-  const url = 'https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(wxLat)+'&longitude='+encodeURIComponent(wxLon)
-    + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,showers,weather_code,wind_speed_10m,wind_direction_10m,cloud_cover,pressure_msl'
-    + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max'
-    + '&timezone=auto&forecast_days=7&temperature_unit=celsius&windspeed_unit=kmh&precipitation_unit=mm';
+
+  // Resolve the selected district/state first so weather is not tied to a stale
+  // or approximate browser coordinate. Open-Meteo is then queried live.
+  try{
+    const q=encodeURIComponent(selectedDistrict+', '+selectedState+', India');
+    const geoRes=await fetch('https://geocoding-api.open-meteo.com/v1/search?name='+q+'&count=1&language=en&format=json');
+    if(geoRes.ok){
+      const geo=await geoRes.json();
+      const hit=geo.results?.[0];
+      if(hit && Number.isFinite(hit.latitude) && Number.isFinite(hit.longitude)){
+        wxLat=hit.latitude; wxLon=hit.longitude;
+      }
+    }
+  }catch(e){ console.warn('[Ground-Aid] location geocoding failed; using configured district coordinates.',e); }
+
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude='+wxLat+'&longitude='+wxLon
+    + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m'
+    + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum'
+    + '&timezone=Asia%2FKolkata&forecast_days=7'
+    + '&_='+Date.now();
 
   $('#wxFull').innerHTML = '<div class="skeleton" style="height:140px;margin-bottom:14px;"></div><div class="skeleton" style="height:90px;"></div>';
   $('#wxSnap').innerHTML = '<div class="skeleton" style="height:72px;"></div>';
@@ -3685,26 +3821,6 @@ async function loadWeather(force){
   }
 }
 
-async function refreshWeatherFromDeviceLocation(){
-  if(!navigator.geolocation){
-    toast('Location is not supported by this browser.');
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    wxLat=pos.coords.latitude;
-    wxLon=pos.coords.longitude;
-    wxPlace='Your current location';
-    store.set('lat',wxLat); store.set('lon',wxLon); store.set('place',wxPlace);
-    $('#wxSnapLoc').textContent='Your current location';
-    wxCache=null; wxCacheTime=0;
-    await loadWeather(true);
-    toast('Weather updated for your current location.');
-  }, ()=>{
-    toast('Location permission was not granted. Using the selected district.');
-  }, {enableHighAccuracy:true,timeout:10000,maximumAge:60000});
-}
-$('#useMyLocation')?.addEventListener('click',refreshWeatherFromDeviceLocation);
-
 function renderWeather(data){
   const cur = data.current;
   const daily = data.daily;
@@ -3720,14 +3836,6 @@ function renderWeather(data){
         <span>💧 ${cur.relative_humidity_2m}% ${t('humidity').toLowerCase()}</span>
         <span>💨 ${Math.round(cur.wind_speed_10m)} km/h</span>
       </div>
-    </div>
-    <div class="live-weather-bar">
-      <span class="data-badge live">LIVE</span>
-      <span>Open-Meteo current weather</span>
-      <span>•</span>
-      <span>Updated ${cur.time ? new Date(cur.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'now'}</span>
-      <span>•</span>
-      <strong>${wxPlace || 'Selected location'}</strong>
     </div>
   `;
 
@@ -3748,7 +3856,12 @@ function renderWeather(data){
     `;
   }).join('');
 
+  const weatherStamp = data.current?.time ? new Date(data.current.time).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : new Date().toLocaleString('en-IN');
   $('#wxFull').innerHTML = `
+    <div class="status-row" style="margin-bottom:12px;">
+      <span class="data-badge live">LIVE API</span>
+      <span class="freshness">Open-Meteo · observation/model blend as supplied by provider · ${escapeHtml(weatherStamp)}</span>
+    </div>
     <div class="wx-now" style="margin-bottom:6px;">
       <div class="wx-icon" style="font-size:4rem;">${info.icon}</div>
       <div>
@@ -3975,51 +4088,70 @@ $('#labTabs').addEventListener('click', e => {
   $('#labFind').hidden = labTab !== 'find';
   $('#labHire').hidden = labTab !== 'hire';
   $('#labPost').hidden = labTab !== 'post';
-  if(labTab==='find') renderJobs();
-  if(labTab==='hire') renderWorkers();
+  if (labTab === 'hire') renderWorkers();
+  if (labTab === 'find' || labTab === 'post') renderJobs();
 });
 
-const WORKERS = [
-  {id:'w1',name:'Ramesh Kumar',loc:'Burdwan',skills:['Paddy transplanting','Harvesting'],exp:'8 years',rate:500,phone:'',available:true},
-  {id:'w2',name:'Sita Devi',loc:'Hooghly',skills:['Vegetable work','Weeding','Harvesting'],exp:'6 years',rate:450,phone:'',available:true},
-  {id:'w3',name:'Mohan Das',loc:'Nadia',skills:['Irrigation','Paddy work','Field preparation'],exp:'10 years',rate:550,phone:'',available:true},
-  {id:'w4',name:'Anita Mondal',loc:'Murshidabad',skills:['Jute','Weeding','Sorting'],exp:'5 years',rate:450,phone:'',available:true},
-  {id:'w5',name:'Sanjay Pal',loc:'Howrah',skills:['Potato harvesting','Loading','Farm machinery'],exp:'7 years',rate:600,phone:'',available:true},
-  {id:'w6',name:'Mita Roy',loc:'Malda',skills:['Fruit harvesting','Vegetable work','Packing'],exp:'9 years',rate:500,phone:'',available:true}
-];
+function normalizeWorker(w){
+  return {
+    id:w.id||('worker_'+Date.now()),
+    name:String(w.name||''),
+    loc:String(w.loc||''),
+    skill:String(w.skill||'General farm work'),
+    pay:num(w.pay,450),
+    workers:num(w.workers,1),
+    phone:String(w.phone||''),
+    added:w.added||new Date().toISOString()
+  };
+}
+function getWorkers(){ return store.get('workers', []).map(normalizeWorker); }
+function saveWorkers(w){ store.set('workers', w.map(normalizeWorker)); }
 
 function renderWorkers(){
   const wrap=$('#workerList'); if(!wrap)return;
-  const q=($('#workerSearch')?.value||'').toLowerCase().trim();
-  const area=($('#workerArea')?.value||'').toLowerCase().trim();
-  const rows=WORKERS.filter(w=>{
-    const hay=[w.name,w.loc,w.exp,...w.skills].join(' ').toLowerCase();
-    return (!q||hay.includes(q))&&(!area||w.loc.toLowerCase().includes(area));
-  });
-  if(!rows.length){
-    wrap.innerHTML='<div class="empty"><div class="ic">👷</div><p>No workers matched your search.</p></div>';
+  const workers=getWorkers();
+  if(!workers.length){
+    wrap.innerHTML='<div class="empty"><div class="ic">👷</div><p>No worker profiles yet. Add the first worker or farm team.</p></div>';
     return;
   }
-  wrap.innerHTML='<div class="grid g2">'+rows.map(w=>`
-    <article class="worker-card">
-      <div style="display:flex;gap:12px;align-items:center;">
-        <div class="worker-avatar">${escapeHtml(w.name.charAt(0))}</div>
-        <div style="flex:1;">
+  wrap.innerHTML='<div class="grid g2">'+workers.map(w=>`
+    <div class="job">
+      <div class="job-top">
+        <div class="avatar">👷</div>
+        <div style="flex:1;min-width:0;">
           <div class="job-title">${escapeHtml(w.name)}</div>
-          <div class="job-meta">📍 ${escapeHtml(w.loc)} · ${escapeHtml(w.exp)} experience</div>
+          <div class="job-meta">📍 ${escapeHtml(w.loc)} · 🛠️ ${escapeHtml(w.skill)} · 👥 ${w.workers}</div>
         </div>
-        <span class="pill ideal">AVAILABLE</span>
       </div>
-      <div class="worker-tags">${w.skills.map(s=>`<span class="worker-tag">${escapeHtml(s)}</span>`).join('')}</div>
+      <div class="job-body">Available for hiring. Expected wage: <b>₹${w.pay}/day</b>.</div>
       <div class="job-foot">
-        <span class="worker-rate">₹${w.rate}/day</span>
-        <span style="margin-left:auto;font-size:.72rem;color:var(--muted);">Skill-based indicative rate</span>
+        <span class="pill ideal">AVAILABLE</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <a class="btn btn-primary btn-sm" href="tel:${escapeHtml(w.phone)}">📞 ${t('callNow')}</a>
+          <button class="btn btn-ghost btn-sm" data-del-worker="${escapeHtml(w.id)}">Remove</button>
+        </div>
       </div>
-    </article>`).join('')+'</div>';
+    </div>`).join('')+'</div>';
 }
 
-$('#workerSearch')?.addEventListener('input',renderWorkers);
-$('#workerArea')?.addEventListener('input',renderWorkers);
+$('#wAddBtn')?.addEventListener('click',()=>{
+  const name=$('#w-name').value.trim(), loc=$('#w-loc').value.trim(), phone=$('#w-phone').value.trim();
+  if(!name||!loc||!phone){toast(t('fillRequired'));return;}
+  const worker=normalizeWorker({
+    id:'worker_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+    name,loc,phone,pay:num($('#w-pay').value,450),workers:num($('#w-workers').value,1),
+    skill:$('#w-skill').value,added:new Date().toISOString()
+  });
+  const rows=getWorkers();rows.unshift(worker);saveWorkers(rows);
+  $('#w-name').value='';$('#w-loc').value='';$('#w-phone').value='';
+  renderWorkers();toast('Worker profile added.');
+});
+
+$('#workerList')?.addEventListener('click',e=>{
+  const b=e.target.closest('[data-del-worker]');if(!b)return;
+  saveWorkers(getWorkers().filter(w=>String(w.id)!==String(b.dataset.delWorker)));
+  renderWorkers();
+});
 
 function getJobs(){ return store.get('jobs', []).map(normalizeJob); }
 function saveJobs(j){ store.set('jobs', j.map(normalizeJob)); }
@@ -4047,6 +4179,7 @@ $('#jPostBtn').addEventListener('click', () => {
   labTab = 'find';
   $$('#labTabs .chip').forEach(c => c.classList.toggle('on', c.dataset.lab === 'find'));
   $('#labFind').hidden = false;
+  $('#labHire').hidden = true;
   $('#labPost').hidden = true;
   renderJobs();
   toast(t('jobPosted'));
@@ -4576,7 +4709,7 @@ async function registerGroundAidSW(){
   function renderIntegrationStatus(){
     const el=$('#integrationStatus');if(!el)return;
     const rows=[
-      ['Weather','Open-Meteo current endpoint',true,'Current weather is fetched live for the selected coordinates; browser location can be used for more precise positioning.'],
+      ['Weather','Open-Meteo',true,'Public endpoint; no API key required for the current integration.'],
       ['Mandi','Government market API',!!(GROUND_AID_CONFIG.mandi.apiKey&&GROUND_AID_CONFIG.mandi.resourceId),'Configure API_KEY + RESOURCE_ID to retrieve verified live market data.'],
       ['Shared labour','Supabase',sharedBackend.enabled(),'Backend not configured; board remains local/demo when disabled.'],
       ['Disease AI','External model endpoint',!!GROUND_AID_CONFIG.diseaseAI.endpoint,'No trained disease model is connected by default; current scanner is preliminary visual heuristic.']
@@ -4629,6 +4762,7 @@ async function registerGroundAidSW(){
   populateProfit();
   renderHistory();
   renderCompare();
+  renderWorkers();
   renderIntegrationStatus();
   updateDashboard();
   updateAlerts();
