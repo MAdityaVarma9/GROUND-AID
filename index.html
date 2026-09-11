@@ -741,6 +741,324 @@ td.num{ font-family:var(--font-mono); font-weight:600; color:var(--ink); text-al
 .freshness{font-size:.66rem;color:var(--muted)}
 @media(prefers-reduced-motion:reduce){.page,.result-block,.qa:hover,.crop-card:hover{animation:none;transition:none}.bar-fill{transition:none}}
 
+
+/* ============================================================
+   GROUND AID 2.0 — VISUAL REFRESH
+   Appearance-only layer. No HTML, IDs, classes, JS or data
+   behaviours are changed.
+   ============================================================ */
+
+/* Living agricultural backdrop */
+html{
+  background:#071c14;
+}
+body{
+  position:relative;
+  overflow-x:hidden;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(167,201,87,.16), transparent 25%),
+    radial-gradient(circle at 92% 12%, rgba(61,125,94,.14), transparent 27%),
+    radial-gradient(circle at 50% 88%, rgba(196,98,45,.07), transparent 30%),
+    linear-gradient(145deg,#f8f6ed 0%,#f3f7ee 45%,#eef4e9 100%);
+}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-2;
+  pointer-events:none;
+  opacity:.52;
+  background:
+    linear-gradient(115deg,transparent 0 47%,rgba(45,106,79,.045) 47.1% 47.35%,transparent 47.45% 100%),
+    linear-gradient(25deg,transparent 0 62%,rgba(167,201,87,.055) 62.1% 62.35%,transparent 62.45% 100%);
+  background-size:180px 180px,220px 220px;
+}
+body::after{
+  content:"";
+  position:fixed;
+  width:520px;height:520px;
+  left:-250px;bottom:-260px;
+  z-index:-1;
+  pointer-events:none;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(167,201,87,.15),rgba(167,201,87,.04) 42%,transparent 70%);
+  filter:blur(4px);
+}
+body.hc{
+  background:#000;
+}
+body.hc::before,body.hc::after{display:none}
+
+/* Premium glass header */
+.app-header{
+  background:rgba(248,250,244,.78);
+  border-bottom:1px solid rgba(45,106,79,.16);
+  box-shadow:0 8px 30px rgba(22,33,27,.06);
+}
+.app-header .shell{height:66px}
+.logo-mark{
+  width:36px;height:36px;border-radius:11px;
+  background:linear-gradient(145deg,#1b4332,#2d6a4f 58%,#5b8f48);
+  box-shadow:0 7px 18px rgba(27,67,50,.28);
+}
+.logo{font-size:1.1rem}
+.logo em{color:#5d963f}
+.logo small{color:#718078}
+
+.nav-bar{
+  background:rgba(248,250,244,.72);
+  border-bottom-color:rgba(45,106,79,.13);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.nav-tab{
+  position:relative;
+  padding-top:13px;padding-bottom:13px;
+}
+.nav-tab.on{
+  color:#1b4332;
+  background:linear-gradient(180deg,rgba(216,233,222,.2),rgba(216,233,222,.55));
+  border-bottom-color:#5d963f;
+}
+.nav-tab.on::after{
+  content:"";
+  position:absolute;
+  left:18px;right:18px;bottom:-1px;height:3px;
+  border-radius:5px 5px 0 0;
+  background:linear-gradient(90deg,#2d6a4f,#a7c957);
+}
+
+/* More dimensional content surfaces */
+.card,.module,.qa,.crop-card,.job,.scheme{
+  border-color:rgba(45,106,79,.13);
+  box-shadow:
+    0 1px 2px rgba(22,33,27,.035),
+    0 10px 28px rgba(22,33,27,.055);
+  transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;
+}
+.card:hover,.module:hover{
+  border-color:rgba(45,106,79,.22);
+  box-shadow:0 16px 40px rgba(22,33,27,.075);
+}
+.module{
+  background:rgba(255,255,255,.86);
+}
+.card{
+  background:rgba(255,255,255,.88);
+}
+
+/* Hero — the main attention anchor */
+.hero{
+  min-height:320px;
+  display:flex;
+  align-items:center;
+  background:
+    radial-gradient(circle at 88% 18%,rgba(167,201,87,.42),transparent 24%),
+    radial-gradient(circle at 72% 95%,rgba(196,98,45,.18),transparent 28%),
+    linear-gradient(135deg,#123b2b 0%,#1b563e 43%,#2d6a4f 72%,#4b8256 100%);
+  border:1px solid rgba(255,255,255,.13);
+  box-shadow:0 24px 60px rgba(27,67,50,.22);
+}
+.hero::before{
+  background:
+    radial-gradient(ellipse at 78% 52%,transparent 0 24%,rgba(255,255,255,.08) 24.2% 24.6%,transparent 24.8% 33%,rgba(255,255,255,.05) 33.2% 33.5%,transparent 33.7%),
+    repeating-linear-gradient(115deg,transparent 0 28px,rgba(255,255,255,.035) 28px 29px);
+  opacity:.9;
+}
+.hero::after{
+  right:-85px;bottom:-115px;
+  width:360px;height:360px;
+  background:
+    radial-gradient(circle at 50% 50%,rgba(167,201,87,.32),transparent 56%),
+    repeating-radial-gradient(circle at 50% 50%,transparent 0 27px,rgba(255,255,255,.055) 28px 29px);
+  opacity:.85;
+}
+.hero-inner{max-width:760px}
+.hero .greet{
+  display:inline-flex;
+  padding:6px 11px;
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  backdrop-filter:blur(8px);
+}
+.hero h1{
+  font-size:clamp(2rem,5vw,3.35rem);
+  letter-spacing:-.035em;
+  text-shadow:0 3px 22px rgba(0,0,0,.18);
+}
+.hero .sub{
+  font-size:.98rem;
+  max-width:64ch;
+}
+.hero .hero-cta{margin-top:24px}
+.hero .btn-light{
+  box-shadow:0 8px 22px rgba(0,0,0,.14);
+}
+.hero .btn-outline-w{
+  background:rgba(255,255,255,.055);
+  backdrop-filter:blur(6px);
+}
+
+/* Quick actions become visual tiles */
+.qa{
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(247,250,243,.88));
+}
+.qa::after{
+  content:"";
+  position:absolute;
+  width:90px;height:90px;
+  right:-35px;bottom:-38px;
+  border-radius:50%;
+  background:rgba(167,201,87,.08);
+  transition:transform .25s ease;
+}
+.qa:hover{
+  transform:translateY(-5px);
+  border-color:rgba(45,106,79,.35);
+  box-shadow:0 18px 36px rgba(27,67,50,.12);
+}
+.qa:hover::after{transform:scale(1.55)}
+.qa .ic{
+  box-shadow:0 6px 14px rgba(22,33,27,.07);
+}
+
+/* Section headings get stronger visual hierarchy */
+.sec-head .eyebrow{
+  color:#568d3d;
+  position:relative;
+}
+.sec-head .eyebrow::before{
+  content:"";
+  display:inline-block;
+  width:22px;height:3px;
+  margin:0 8px 2px 0;
+  border-radius:4px;
+  background:linear-gradient(90deg,#2d6a4f,#a7c957);
+}
+
+/* Inputs and data panels */
+.input,.select,.textarea{
+  background:rgba(249,251,246,.9);
+  border-color:rgba(45,106,79,.16);
+  box-shadow:inset 0 1px 2px rgba(22,33,27,.025);
+}
+.input:focus,.select:focus,.textarea:focus{
+  border-color:#2d6a4f;
+  box-shadow:0 0 0 4px rgba(45,106,79,.11),0 5px 16px rgba(45,106,79,.07);
+}
+.drop{
+  background:
+    radial-gradient(circle at 50% 20%,rgba(167,201,87,.12),transparent 38%),
+    rgba(249,251,246,.82);
+}
+.drop:hover,.drop.over{
+  background:
+    radial-gradient(circle at 50% 20%,rgba(167,201,87,.22),transparent 45%),
+    var(--green-soft);
+}
+
+/* Weather snapshot */
+.wx-day{
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.wx-day:hover{
+  transform:translateY(-3px);
+  border-color:rgba(45,106,79,.3);
+  box-shadow:0 8px 20px rgba(22,33,27,.07);
+}
+
+/* Data cards and tables */
+.tbl-wrap{
+  box-shadow:0 10px 28px rgba(22,33,27,.045);
+}
+th{
+  background:linear-gradient(180deg,#f8faf5,#f0f5ec);
+}
+tbody tr{
+  transition:background .15s ease;
+}
+tbody tr:hover{background:#f3f8ef}
+
+/* KPI emphasis */
+.farm-kpi{
+  background:
+    linear-gradient(145deg,rgba(255,255,255,.95),rgba(239,246,235,.86));
+  border-color:rgba(45,106,79,.14);
+}
+.farm-kpi .v{
+  color:#1b4332;
+}
+
+/* Bottom navigation */
+.bottom-nav{
+  background:rgba(250,252,248,.86);
+  border-top-color:rgba(45,106,79,.15);
+  box-shadow:0 -10px 30px rgba(22,33,27,.08);
+}
+.bn-item.on{
+  background:linear-gradient(180deg,rgba(216,233,222,.0),rgba(216,233,222,.65));
+}
+
+/* Buttons feel more tactile without changing behaviour */
+.btn{
+  box-shadow:0 3px 10px rgba(22,33,27,.045);
+}
+.btn-primary{
+  background:linear-gradient(135deg,#2d6a4f,#245a42);
+  box-shadow:0 8px 18px rgba(45,106,79,.2);
+}
+.btn-primary:hover{
+  transform:translateY(-1px);
+  box-shadow:0 11px 24px rgba(45,106,79,.25);
+}
+.btn-light{
+  box-shadow:0 8px 22px rgba(0,0,0,.13);
+}
+
+/* Floating visual accents on long pages */
+.page{
+  position:relative;
+}
+.page::before{
+  content:"";
+  position:absolute;
+  width:180px;height:180px;
+  right:-105px;top:170px;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(167,201,87,.10),transparent 68%);
+  pointer-events:none;
+  z-index:-1;
+}
+
+/* Keep accessibility mode visually dominant */
+body.hc .app-header,
+body.hc .nav-bar,
+body.hc .card,
+body.hc .module,
+body.hc .qa,
+body.hc .crop-card,
+body.hc .job,
+body.hc .scheme,
+body.hc .bottom-nav{
+  background:var(--surface);
+  box-shadow:none;
+}
+body.hc .hero{
+  background:#111;
+  border:2px solid var(--green);
+}
+body.hc .page::before{display:none}
+
+/* Reduced-motion users keep the exact same static experience */
+@media (prefers-reduced-motion:reduce){
+  .card,.module,.qa,.crop-card,.job,.scheme,.wx-day,.btn,
+  .qa::after{transition:none !important}
+  .qa:hover,.wx-day:hover,.btn-primary:hover{transform:none}
+}
+
 </style>
 </head>
 
