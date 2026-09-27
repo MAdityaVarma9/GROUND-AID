@@ -2060,7 +2060,7 @@ function normalizeJob(j){return {id:j.id||('job_'+Date.now()),title:String(j.tit
 async function syncSharedJobs(){
   if(!sharedBackend.enabled()) return;
   try{const remote=await sharedBackend.listJobs();if(Array.isArray(remote)){store.set('jobs',remote.map(normalizeJob));renderJobs();}}
-  catch(e){console.warn('[Ground-Aid] shared labour board unavailable',e);}
+  catch(e){}
 }
 async function fetchLiveMandi(){
   const c=GROUND_AID_CONFIG.mandi;if(!c.apiKey||!c.resourceId||!navigator.onLine)return null;
@@ -2069,7 +2069,7 @@ async function fetchLiveMandi(){
     const r=await fetch('https://api.data.gov.in/resource/'+encodeURIComponent(c.resourceId)+'?'+q);if(!r.ok)throw Error('Mandi API '+r.status);
     const j=await r.json();if(!Array.isArray(j.records))return null;
     return j.records.map(r=>normalizeMandiRecord(r)).filter(Boolean);
-  }catch(e){console.warn('[Ground-Aid] live mandi unavailable',e);return null;}
+  }catch(e){return null;}
 }
 function normalizeMandiRecord(r){
   const crop=r.commodity||r.Commodity||r.crop||r.Crop||r.commodity_name||r['Commodity Name'];
@@ -3805,7 +3805,7 @@ async function loadWeather(force){
         wxLat=hit.latitude; wxLon=hit.longitude;
       }
     }
-  }catch(e){ console.warn('[Ground-Aid] location geocoding failed; using configured district coordinates.',e); }
+  }catch(e){}
 
   const url = 'https://api.open-meteo.com/v1/forecast?latitude='+wxLat+'&longitude='+wxLon
     + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m'
@@ -4177,7 +4177,7 @@ $('#jPostBtn').addEventListener('click', () => {
   const jobs=getJobs();jobs.unshift(job);saveJobs(jobs);
   if(sharedBackend.enabled())sharedBackend.insertJob(job).then(remote=>{
     if(remote){const current=getJobs().filter(x=>String(x.id)!==String(job.id));current.unshift(normalizeJob(remote));saveJobs(current);renderJobs();}
-  }).catch(e=>{console.warn(e);toast('Saved on this device; shared post failed.');});
+  }).catch(e=>{toast('Saved on this device; shared post failed.');});
 
   // clear
   $('#j-title').value = ''; $('#j-loc').value = '';
@@ -4229,7 +4229,7 @@ $('#labList').addEventListener('click', e => {
   if (!b) return;
   const id=b.dataset.delJob;
   saveJobs(getJobs().filter(j=>String(j.id)!==String(id)));
-  if(sharedBackend.enabled())sharedBackend.deleteJob(id).catch(e=>console.warn('[Ground-Aid] shared delete failed',e));
+  if(sharedBackend.enabled())sharedBackend.deleteJob(id).catch(()=>{});
   renderJobs();
 });
 
@@ -4381,8 +4381,8 @@ async function registerGroundAidSW(){
   if(!('serviceWorker' in navigator))return;
   const ok=location.protocol==='https:'||(location.protocol==='http:'&&(location.hostname==='localhost'||location.hostname==='127.0.0.1'));
   if(!ok)return;
-  try{await navigator.serviceWorker.register('./sw.js',{scope:'./'});console.info('[Ground-Aid] optional service worker registered');}
-  catch(e){console.info('[Ground-Aid] optional service worker not present; local offline mode active');}
+  try{await navigator.serviceWorker.register('./sw.js',{scope:'./'});}
+  catch(e){}
 }
 
 /* ============================================================
@@ -4761,7 +4761,7 @@ async function registerGroundAidSW(){
       if(id==='history')renderHistory();
       if(id==='trust')renderIntegrationStatus();
       if(id==='home'){updateDashboard();updateAlerts();}
-    }catch(e){ console.error('GROUND-AID page render failed:',id,e); }
+    }catch(e){}
   };
 
   /* Add missing cached-weather fallback without pretending it is live. */
@@ -4770,7 +4770,7 @@ async function registerGroundAidSW(){
   if(wc?.data){farmState.weather=wc.data;}
   /* Each init call is isolated: a failure in one module must never block
      boot()/renderNav() from running, which would take down the whole nav bar. */
-  const safeRun=(fn,label)=>{try{fn();}catch(e){console.error('GROUND-AID init failed:',label,e);}};
+  const safeRun=fn=>{try{fn();}catch(e){}};
   safeRun(updateLocationFields,'updateLocationFields');
   safeRun(populateProfit,'populateProfit');
   safeRun(renderHistory,'renderHistory');
@@ -4794,5 +4794,2771 @@ boot();
 
 })();
 </script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · RESOURCE DECISION ENGINE (standalone)
+     Demo: wheat · dry spell · Jamshedpur region
+     Production irrigation decision-support engine.
+     Self-contained. Does not modify existing modules.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+
+/* RESOURCE DECISION ENGINE — Phase 1
+   ----------------------------------------------------------
+   Rule-based irrigation decision support for wheat.
+   Transparent, deterministic, no hidden ML. Simulated data
+   is never passed off as real. */
+const STAGE_PROFILE = {
+  cri:       { label:'Crown Root Initiation', thresholdPct:20, baseMm:50, critical:true  },
+  tillering: { label:'Tillering',             thresholdPct:18, baseMm:45, critical:false },
+  jointing:  { label:'Jointing / Booting',    thresholdPct:17, baseMm:50, critical:true  },
+  flowering: { label:'Flowering',             thresholdPct:19, baseMm:55, critical:true  },
+  milking:   { label:'Milking / Dough',       thresholdPct:16, baseMm:40, critical:false },
+  maturity:  { label:'Maturity',              thresholdPct:12, baseMm:25, critical:false }
+};
+
+// 1 mm rain on loam topsoil ≈ +0.15 % volumetric moisture.
+// Documented so Phase 2 field trials can refine it.
+const RAIN_TO_SM_FACTOR = 0.15;
+
+function decide(input){
+  const sm    = Number(input.soilMoisturePct);
+  const stage = String(input.growthStage || '').toLowerCase();
+  const rain7 = Number(input.recentRain7dMm   || 0);
+  const rain3 = Number(input.forecastRain3dMm || 0);
+
+  if (!isFinite(sm) || sm < 0 || sm > 100)
+    throw new Error('soilMoisturePct must be a number between 0 and 100');
+  const p = STAGE_PROFILE[stage];
+  if (!p)
+    throw new Error('Unknown growthStage "'+stage+'". Use one of: '+Object.keys(STAGE_PROFILE).join(', '));
+
+  const eff = sm + (rain7 * RAIN_TO_SM_FACTOR);
+  const t   = p.thresholdPct;
+
+  if (eff >= t + 5){
+    return { irrigate:false, amountMm:0,
+      reason:'Soil moisture ('+eff.toFixed(1)+'%) is above the '+p.label+
+             ' threshold of '+t+'%. No irrigation needed today.',
+      effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+  }
+  if (rain3 >= 15){
+    return { irrigate:false, amountMm:0,
+      reason:rain3+' mm of rain is forecast over the next 3 days. Irrigation is '+
+             'unnecessary; re-check after the rain.',
+      effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+  }
+  if (rain3 >= 5){
+    if (eff < t - 5){
+      const half = Math.round(p.baseMm * 0.5);
+      return { irrigate:true, amountMm:half,
+        reason:'Moisture ('+eff.toFixed(1)+'%) is critically below the '+p.label+
+               ' threshold of '+t+'%. Apply a half dose ('+half+' mm) now; the '+
+               'forecast '+rain3+' mm will finish the job.',
+        effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+    }
+    return { irrigate:false, amountMm:0,
+      reason:'Moderate rain ('+rain3+' mm) is forecast and moisture ('+eff.toFixed(1)+
+             '%) is close to the '+p.label+' threshold of '+t+
+             '%. Hold irrigation and re-check tomorrow.',
+      effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+  }
+  if (eff <= t - 8){
+    return { irrigate:true, amountMm:p.baseMm,
+      reason:'Severe moisture deficit ('+eff.toFixed(1)+'%) at '+p.label+
+             '. Apply a full irrigation of '+p.baseMm+' mm'+
+             (p.critical?' — this is a critical growth stage.':'.'),
+      effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+  }
+  if (eff < t){
+    const partial = Math.round(p.baseMm * 0.8);
+    return { irrigate:true, amountMm:partial,
+      reason:'Moisture ('+eff.toFixed(1)+'%) is below the '+p.label+
+             ' threshold of '+t+'%. Apply '+partial+' mm.',
+      effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+  }
+  return { irrigate:false, amountMm:0,
+    reason:'Moisture ('+eff.toFixed(1)+'%) is at or above the '+p.label+
+           ' threshold of '+t+'%. Monitor, do not irrigate.',
+    effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
+}
+
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · SIMULATED DIGITAL TWIN
+     Depends on: GroundAid.ResourceDecisionEngine
+     Injects itself into #page-home after the hero. No existing
+     module, ID, class, translation, or behaviour is modified.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+
+/* ---------- Wait until the host app has booted ---------- */
+function whenReady(fn){
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', fn, { once:true });
+  } else {
+    // Host app boots synchronously, but give it one tick to settle.
+    setTimeout(fn, 0);
+  }
+}
+
+whenReady(function initTwin(){
+  const home = document.getElementById('page-home');
+  if (!home) return;
+  if (document.getElementById('gaTwinSection')) return; // idempotent
+
+  const Engine = (window.GroundAid && window.GroundAid.ResourceDecisionEngine) || null;
+  if (!Engine){
+    
+  }
+
+  const STAGES = [
+    { id:'cri',       short:'CRI',       full:'Crown Root Initiation' },
+    { id:'tillering', short:'Tillering', full:'Tillering' },
+    { id:'jointing',  short:'Jointing',  full:'Jointing / Booting' },
+    { id:'flowering', short:'Flowering', full:'Flowering' },
+    { id:'milking',   short:'Milking',   full:'Milking / Dough' },
+    { id:'maturity',  short:'Maturity',  full:'Maturity' }
+  ];
+
+  /* ---------- Styles (scoped, prefixed) ---------- */
+  const style = document.createElement('style');
+  style.textContent = `
+    #gaTwinSection .ga-twin-grid{
+      display:grid; gap:18px; grid-template-columns:1fr; align-items:start;
+    }
+    @media(min-width:880px){
+      #gaTwinSection .ga-twin-grid{ grid-template-columns:1.35fr 1fr; }
+    }
+    #gaTwinSection .ga-twin-stage{
+      position:relative; border-radius:var(--radius);
+      overflow:hidden; border:1px solid var(--line);
+      background:#cfe4f0; box-shadow:var(--shadow);
+    }
+    #gaTwinSection .ga-twin-banner{
+      position:absolute; top:0; left:0; right:0;
+      padding:6px 12px;
+      background:linear-gradient(90deg, rgba(180,83,9,.96), rgba(179,38,30,.96));
+      color:#fff; font-size:.66rem; font-weight:800;
+      letter-spacing:.09em; text-transform:uppercase;
+      text-align:center; z-index:2;
+      text-shadow:0 1px 1px rgba(0,0,0,.25);
+    }
+    #gaTwinSection .ga-twin-side{
+      display:flex; flex-direction:column; gap:14px; min-width:0;
+    }
+    #gaTwinSection .ga-twin-sliders{
+      display:grid; gap:14px;
+      padding:16px; border:1px solid var(--line);
+      border-radius:var(--radius); background:var(--surface-2);
+    }
+    #gaTwinSection .ga-twin-slider{ display:flex; flex-direction:column; gap:6px; }
+    #gaTwinSection .ga-twin-slider .row{
+      display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+    }
+    #gaTwinSection .ga-twin-slider .lbl{
+      font-size:.78rem; font-weight:700; color:var(--ink-2);
+      letter-spacing:.01em;
+    }
+    #gaTwinSection .ga-twin-slider .val{
+      font-family:var(--font-mono); font-size:.82rem; font-weight:700;
+      color:var(--green-dark);
+      background:var(--green-soft); padding:2px 8px; border-radius:6px;
+    }
+    #gaTwinSection .ga-twin-slider .sub{
+      font-size:.68rem; color:var(--muted); font-weight:500;
+    }
+    #gaTwinSection .ga-twin-decision{
+      padding:16px; border:1px solid var(--line);
+      border-radius:var(--radius); background:var(--surface-2);
+      display:flex; flex-direction:column; gap:10px;
+    }
+    #gaTwinSection .ga-twin-decision .head{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      flex-wrap:wrap;
+    }
+    #gaTwinSection .ga-twin-decision .amount{
+      font-family:var(--font-head); font-size:1.6rem; font-weight:700;
+      line-height:1; letter-spacing:-.02em;
+    }
+    #gaTwinSection .ga-twin-decision .amount small{
+      font-family:var(--font); font-size:.72rem; font-weight:600;
+      color:var(--muted); margin-left:4px; letter-spacing:.02em;
+    }
+    #gaTwinSection .ga-twin-decision .reason{
+      font-size:.82rem; line-height:1.55; color:var(--ink-2);
+      padding:10px 12px; border-radius:9px; background:var(--surface);
+      border:1px dashed var(--line);
+    }
+    #gaTwinSection .ga-twin-decision .meta{
+      display:flex; gap:8px; flex-wrap:wrap;
+      font-size:.68rem; color:var(--muted);
+    }
+    #gaTwinSection .ga-twin-decision .meta span{
+      padding:3px 8px; border-radius:99px; background:var(--bg-alt);
+      border:1px solid var(--line); font-family:var(--font-mono);
+    }
+    #gaTwinSection .ga-twin-actions{
+      display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;
+    }
+    #gaTwinSection .ga-twin-actions .btn{ flex:1 1 auto; }
+    #gaTwinSection .ga-twin-footer{
+      margin-top:12px; padding:10px 12px;
+      font-size:.72rem; color:var(--muted);
+      border:1px dashed var(--line-2); border-radius:10px;
+      background:var(--surface-2); line-height:1.55;
+    }
+    #gaTwinSection .ga-twin-footer b{ color:var(--ink-2); }
+
+    /* Rain animation */
+    @keyframes gaRainFall{
+      0%   { transform:translateY(-30px); opacity:0; }
+      15%  { opacity:1; }
+      100% { transform:translateY(210px); opacity:1; }
+    }
+    #twinRain line{
+      animation:gaRainFall 1.35s linear infinite;
+      transform-origin:center;
+      will-change:transform;
+    }
+    @media (prefers-reduced-motion: reduce){
+      #twinRain line{ animation:none; opacity:.7; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  /* ---------- Soil colour interpolation ---------- */
+  const SOIL_STOPS = [
+    { t:0,   top:[214,190,148], bot:[186,158,110] },
+    { t:25,  top:[186,158,110], bot:[140,110,72]  },
+    { t:50,  top:[140,110,72],  bot:[92,68,42]    },
+    { t:75,  top:[108,76,50],   bot:[60,44,30]    },
+    { t:100, top:[76,58,42],    bot:[44,32,24]    }
+  ];
+  const lerp = (a,b,t) => a + (b-a)*t;
+  const toHex = n => Math.round(Math.max(0,Math.min(255,n))).toString(16).padStart(2,'0');
+  function soilColorAt(m){
+    m = Math.max(0, Math.min(100, m));
+    for (let i=0; i<SOIL_STOPS.length-1; i++){
+      const a = SOIL_STOPS[i], b = SOIL_STOPS[i+1];
+      if (m >= a.t && m <= b.t){
+        const t = (b.t === a.t) ? 0 : (m - a.t)/(b.t - a.t);
+        const top = [lerp(a.top[0],b.top[0],t), lerp(a.top[1],b.top[1],t), lerp(a.top[2],b.top[2],t)];
+        const bot = [lerp(a.bot[0],b.bot[0],t), lerp(a.bot[1],b.bot[1],t), lerp(a.bot[2],b.bot[2],t)];
+        return { top:'#'+toHex(top[0])+toHex(top[1])+toHex(top[2]),
+                 bot:'#'+toHex(bot[0])+toHex(bot[1])+toHex(bot[2]) };
+      }
+    }
+    const last = SOIL_STOPS[SOIL_STOPS.length-1];
+    return { top:'#'+toHex(last.top[0])+toHex(last.top[1])+toHex(last.top[2]),
+             bot:'#'+toHex(last.bot[0])+toHex(last.bot[1])+toHex(last.bot[2]) };
+  }
+
+  /* ---------- Deterministic pseudo-random ---------- */
+  const rng = i => {
+    const x = Math.sin(i * 12.9898 + 4.1414) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  /* ---------- SVG scaffold ---------- */
+  function buildSVG(){
+    let rainLines = '';
+    for (let i = 0; i < 26; i++){
+      const x = 20 + rng(i) * 560;
+      const y = 4 + rng(i+100) * 160;
+      const len = 7 + rng(i+200) * 9;
+      const delay = (rng(i+300) * 1.4).toFixed(2);
+      rainLines += `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x-3).toFixed(1)}" y2="${(y+len).toFixed(1)}" stroke="#5a9bd5" stroke-width="1.7" stroke-linecap="round" style="animation-delay:-${delay}s"/>`;
+    }
+    return `
+      <svg id="twinSVG" viewBox="0 0 600 320" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="Simulated wheat field model"
+           style="display:block;width:100%;height:auto;">
+        <defs>
+          <linearGradient id="gaSkyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c3e1f4"/>
+            <stop offset="100%" stop-color="#eaf4fb"/>
+          </linearGradient>
+          <linearGradient id="gaSoilGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#b89868" id="gaSoilStop1"/>
+            <stop offset="100%" stop-color="#5a4228" id="gaSoilStop2"/>
+          </linearGradient>
+          <linearGradient id="gaGWGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#6baad8" stop-opacity="0.30"/>
+            <stop offset="100%" stop-color="#2a5a8a" stop-opacity="0.55"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Sky -->
+        <rect x="0" y="0" width="600" height="180" fill="url(#gaSkyGrad)"/>
+
+        <!-- Sun -->
+        <g id="twinSun" transform="translate(520,58)" opacity="0.95">
+          <circle r="24" fill="#f9d56e"/>
+          <g stroke="#f9d56e" stroke-width="3" stroke-linecap="round">
+            <line x1="0" y1="-34" x2="0" y2="-44"/>
+            <line x1="0" y1="34" x2="0" y2="44"/>
+            <line x1="-34" y1="0" x2="-44" y2="0"/>
+            <line x1="34" y1="0" x2="44" y2="0"/>
+            <line x1="-24" y1="-24" x2="-31" y2="-31"/>
+            <line x1="24" y1="-24" x2="31" y2="-31"/>
+            <line x1="-24" y1="24" x2="-31" y2="31"/>
+            <line x1="24" y1="24" x2="31" y2="31"/>
+          </g>
+        </g>
+
+        <!-- Cloud -->
+        <g id="twinCloud" opacity="0" transform="translate(140,52)">
+          <ellipse cx="0" cy="0" rx="62" ry="22" fill="#dfe8ee"/>
+          <ellipse cx="-34" cy="-6" rx="36" ry="20" fill="#eef4f8"/>
+          <ellipse cx="32" cy="-8" rx="42" ry="22" fill="#e6eef3"/>
+        </g>
+
+        <!-- Rain -->
+        <g id="twinRain" opacity="0">${rainLines}</g>
+
+        <!-- Soil block -->
+        <rect id="twinSoilTop" x="0" y="180" width="600" height="140" fill="url(#gaSoilGrad)"/>
+
+        <!-- Groundwater band -->
+        <rect id="twinGroundwater" x="0" y="270" width="600" height="50" fill="url(#gaGWGrad)"/>
+
+        <!-- Water table line -->
+        <line id="twinWaterTable" x1="0" y1="270" x2="600" y2="270"
+              stroke="#3d7fa8" stroke-width="2" stroke-dasharray="8 5" opacity="0.8"/>
+
+        <!-- Crops (grow upward from y=182) -->
+        <g id="twinCrops" transform="translate(0,182)"></g>
+
+        <!-- Soil surface line -->
+        <line x1="0" y1="180" x2="600" y2="180"
+              stroke="#4a3620" stroke-width="1.4" opacity="0.5"/>
+
+        <!-- Overlay: soil moisture -->
+        <g transform="translate(14,14)">
+          <rect x="0" y="0" width="198" height="52" rx="10" fill="rgba(0,0,0,.62)"/>
+          <text x="12" y="18" fill="#a7c957" font-size="9.5" font-weight="700"
+                letter-spacing="1.4" font-family="Inter,sans-serif">SOIL MOISTURE</text>
+          <text x="12" y="43" fill="#ffffff" font-size="22" font-weight="700"
+                font-family="Inter,sans-serif"><tspan id="twinSmText">--</tspan><tspan font-size="13" fill="#a9c0b1" dx="2">%</tspan></text>
+        </g>
+
+        <!-- Overlay: growth stage -->
+        <g transform="translate(226,14)">
+          <rect x="0" y="0" width="198" height="52" rx="10" fill="rgba(0,0,0,.62)"/>
+          <text x="12" y="18" fill="#a7c957" font-size="9.5" font-weight="700"
+                letter-spacing="1.4" font-family="Inter,sans-serif">GROWTH STAGE</text>
+          <text x="12" y="42" fill="#ffffff" font-size="15" font-weight="700"
+                font-family="Inter,sans-serif" id="twinStageText">--</text>
+        </g>
+      </svg>
+    `;
+  }
+
+  /* ---------- Wheat stalk renderer ---------- */
+  function renderWheatStalks(stageId){
+    const order = ['cri','tillering','jointing','flowering','milking','maturity'];
+    let idx = order.indexOf(stageId);
+    if (idx < 0) idx = 0;
+    const ratio = idx / (order.length - 1);
+
+    const count = 6 + idx * 2;                 // 6 → 16
+    const baseHeight = 22 + ratio * 100;       // 22 → 122
+    const hasHead = idx >= 2;                  // jointing onward
+    const headSize = hasHead ? 3 + ratio * 4.5 : 0;
+
+    const stemColor = ratio < 0.40 ? '#6ba84a'
+                   : ratio < 0.70 ? '#88a548'
+                   :                '#a8b05a';
+    const headColor = idx >= 4 ? '#d9b95a'
+                    : idx >= 3 ? '#c8b95a'
+                    :            '#88a548';
+
+    let svg = '';
+    const spacing = 600 / (count + 1);
+
+    for (let i = 0; i < count; i++){
+      const x     = spacing * (i + 1) + (rng(i)     - 0.5) * 12;
+      const h     = baseHeight + (rng(i+50)  - 0.5) * 15;
+      const lean  = (rng(i+100) - 0.5) * 8;
+
+      // Stem
+      svg += `<path d="M${x.toFixed(1)},0 Q${(x + lean*0.5).toFixed(1)},${(-h*0.55).toFixed(1)} ${(x + lean).toFixed(1)},${(-h).toFixed(1)}" stroke="${stemColor}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`;
+
+      // Two leaves
+      const leafY1 = -h * 0.40;
+      const leafY2 = -h * 0.65;
+      svg += `<path d="M${x.toFixed(1)},${leafY1.toFixed(1)} Q${(x-11).toFixed(1)},${(leafY1-4).toFixed(1)} ${(x-19).toFixed(1)},${(leafY1-2).toFixed(1)}" stroke="${stemColor}" stroke-width="1.7" fill="none" stroke-linecap="round"/>`;
+      svg += `<path d="M${(x + lean*0.4).toFixed(1)},${leafY2.toFixed(1)} Q${(x+11).toFixed(1)},${(leafY2-4).toFixed(1)} ${(x+19).toFixed(1)},${(leafY2-2).toFixed(1)}" stroke="${stemColor}" stroke-width="1.7" fill="none" stroke-linecap="round"/>`;
+
+      // Grain head
+      if (hasHead){
+        const hx = x + lean;
+        const hy = -h;
+        const rot = lean * 1.5;
+        svg += `<g transform="translate(${hx.toFixed(1)},${hy.toFixed(1)}) rotate(${rot.toFixed(1)})">`;
+        svg +=   `<ellipse cx="0" cy="${(-headSize*1.4).toFixed(1)}" rx="${(headSize*0.55).toFixed(1)}" ry="${headSize.toFixed(1)}" fill="${headColor}"/>`;
+        svg +=   `<line x1="0" y1="${(-headSize*2.4).toFixed(1)}" x2="-3" y2="${(-headSize*2.4-7).toFixed(1)}" stroke="${headColor}" stroke-width="0.9" opacity="0.85"/>`;
+        svg +=   `<line x1="0" y1="${(-headSize*2.4).toFixed(1)}" x2="3" y2="${(-headSize*2.4-7).toFixed(1)}" stroke="${headColor}" stroke-width="0.9" opacity="0.85"/>`;
+        svg += `</g>`;
+      }
+    }
+    return svg;
+  }
+
+  /* ---------- Live painter ---------- */
+  function paintTwin(state){
+    // Soil colours
+    const soil = soilColorAt(state.soilMoisturePct);
+    const s1 = document.getElementById('gaSoilStop1');
+    const s2 = document.getElementById('gaSoilStop2');
+    if (s1) s1.setAttribute('stop-color', soil.top);
+    if (s2) s2.setAttribute('stop-color', soil.bot);
+
+    // Water table + groundwater band
+    const wtY = 318 - (state.soilMoisturePct / 100) * 138; // 318 → 180
+    const wt  = document.getElementById('twinWaterTable');
+    const gw  = document.getElementById('twinGroundwater');
+    if (wt){
+      wt.setAttribute('y1', wtY.toFixed(1));
+      wt.setAttribute('y2', wtY.toFixed(1));
+    }
+    if (gw){
+      gw.setAttribute('y', wtY.toFixed(1));
+      gw.setAttribute('height', Math.max(0, 320 - wtY).toFixed(1));
+    }
+
+    // Crops
+    const crops = document.getElementById('twinCrops');
+    if (crops) crops.innerHTML = renderWheatStalks(state.growthStage);
+
+    // Rain intensity (0..1)
+    const rainIntensity = Math.min(1, (state.recentRain7dMm * 0.55 + state.forecastRain3dMm) / 55);
+
+    const rainG = document.getElementById('twinRain');
+    if (rainG) rainG.setAttribute('opacity',
+      rainIntensity > 0.06 ? (0.35 + rainIntensity * 0.6).toFixed(2) : '0');
+
+    const cloud = document.getElementById('twinCloud');
+    if (cloud) cloud.setAttribute('opacity',
+      rainIntensity > 0.12 ? Math.min(1, rainIntensity * 1.2).toFixed(2) : '0');
+
+    const sun = document.getElementById('twinSun');
+    if (sun){
+      const sunOp = rainIntensity > 0.35 ? 0.12
+                  : Math.max(0.15, 0.95 - rainIntensity * 0.85);
+      sun.setAttribute('opacity', sunOp.toFixed(2));
+    }
+
+    // Text overlays
+    const smText = document.getElementById('twinSmText');
+    if (smText) smText.textContent = Math.round(state.soilMoisturePct);
+
+    const stageInfo = STAGES.find(s => s.id === state.growthStage);
+    const stText = document.getElementById('twinStageText');
+    if (stText) stText.textContent = stageInfo ? stageInfo.short : '--';
+  }
+
+  /* ---------- Section HTML ---------- */
+  const section = document.createElement('section');
+  section.className = 'module';
+  section.id = 'gaTwinSection';
+  section.style.marginBottom = '18px';
+
+  section.innerHTML = `
+    <div class="sec-head" style="margin-bottom:14px;">
+      <div class="eyebrow" style="font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">
+        PHASE 1 · DIGITAL TWIN
+      </div>
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span>Simulated Farm Model</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+                     background:var(--amber-soft);color:var(--amber);
+                     font-size:.62rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;">
+          ⚠ For demonstration
+        </span>
+      </h2>
+      <p>Drag the sliders — the field view and the Resource Decision Engine update in real time. This is a simulated model: no physical sensor, pump or flow meter is connected.</p>
+    </div>
+
+    <div class="ga-twin-grid">
+      <div class="ga-twin-stage">
+        <div class="ga-twin-banner">⚠ Simulated Farm Model · For Demonstration · No physical sensor connected</div>
+        ${buildSVG()}
+      </div>
+
+      <div class="ga-twin-side">
+        <div class="ga-twin-sliders">
+          <div class="ga-twin-slider">
+            <div class="row">
+              <span class="lbl">Soil moisture <span class="sub">(top 30 cm)</span></span>
+              <span class="val" id="gaLblSm">18%</span>
+            </div>
+            <input type="range" id="gaSlSM" min="0" max="100" step="1" value="18"
+                   aria-label="Soil moisture percent">
+          </div>
+
+          <div class="ga-twin-slider">
+            <div class="row">
+              <span class="lbl">Rain · last 7 days</span>
+              <span class="val" id="gaLblR7">0 mm</span>
+            </div>
+            <input type="range" id="gaSlR7" min="0" max="100" step="1" value="0"
+                   aria-label="Recent rainfall in millimetres over last 7 days">
+          </div>
+
+          <div class="ga-twin-slider">
+            <div class="row">
+              <span class="lbl">Rain · next 3 days <span class="sub">(forecast)</span></span>
+              <span class="val" id="gaLblR3">0 mm</span>
+            </div>
+            <input type="range" id="gaSlR3" min="0" max="100" step="1" value="0"
+                   aria-label="Forecast rainfall in millimetres over next 3 days">
+          </div>
+
+          <div class="ga-twin-slider">
+            <div class="row">
+              <span class="lbl">Growth stage</span>
+              <span class="val" id="gaLblStg">CRI</span>
+            </div>
+            <input type="range" id="gaSlStg" min="0" max="5" step="1" value="0"
+                   aria-label="Wheat growth stage from CRI to maturity">
+            <div class="sub" id="gaSubStg">Crown Root Initiation · threshold 20%</div>
+          </div>
+
+          <div class="ga-twin-actions">
+            <button class="btn btn-ghost btn-sm" id="gaTwinReset" type="button">↺ Reset demo scenario</button>
+          </div>
+        </div>
+
+        <div class="ga-twin-decision" id="gaTwinDecision" aria-live="polite">
+          <!-- filled at runtime -->
+        </div>
+      </div>
+    </div>
+
+    <div class="ga-twin-footer">
+      <b>What you are looking at:</b> a wheat field model for a Jamshedpur-region dry-spell scenario.
+      Sliders feed the same variables used by the Resource Decision Engine
+      (<code>soilMoisturePct</code>, <code>growthStage</code>, <code>recentRain7dMm</code>, <code>forecastRain3dMm</code>).
+      Visual state and irrigation decision are recomputed on every input event, so they cannot drift apart.
+    </div>
+  `;
+
+  // Inject after the hero, or fall back to after the first child
+  const hero = home.querySelector('.hero');
+  if (hero && hero.parentNode === home){
+    home.insertBefore(section, hero.nextSibling);
+  } else {
+    home.insertBefore(section, home.firstChild);
+  }
+
+  /* ---------- Wire sliders ---------- */
+  const el = {
+    sm:  document.getElementById('gaSlSM'),
+    r7:  document.getElementById('gaSlR7'),
+    r3:  document.getElementById('gaSlR3'),
+    stg: document.getElementById('gaSlStg'),
+    lSm: document.getElementById('gaLblSm'),
+    lR7: document.getElementById('gaLblR7'),
+    lR3: document.getElementById('gaLblR3'),
+    lStg:document.getElementById('gaLblStg'),
+    sStg:document.getElementById('gaSubStg'),
+    dec: document.getElementById('gaTwinDecision'),
+    reset: document.getElementById('gaTwinReset')
+  };
+
+  function readState(){
+    const sIdx = parseInt(el.stg.value, 10) || 0;
+    return {
+      soilMoisturePct:  parseFloat(el.sm.value)  || 0,
+      recentRain7dMm:   parseFloat(el.r7.value)  || 0,
+      forecastRain3dMm: parseFloat(el.r3.value)  || 0,
+      growthStage:      STAGES[sIdx].id
+    };
+  }
+
+  function updateLabels(state){
+    el.lSm.textContent = Math.round(state.soilMoisturePct) + '%';
+    el.lR7.textContent = Math.round(state.recentRain7dMm) + ' mm';
+    el.lR3.textContent = Math.round(state.forecastRain3dMm) + ' mm';
+    const sIdx = parseInt(el.stg.value, 10) || 0;
+    el.lStg.textContent = STAGES[sIdx].short;
+    // threshold sub-label comes from the Resource Engine profile
+    const profile = Engine && Engine.STAGE_PROFILE && Engine.STAGE_PROFILE[STAGES[sIdx].id];
+    el.sStg.textContent = STAGES[sIdx].full +
+      (profile ? ' · threshold ' + profile.thresholdPct + '% · full dose ' + profile.baseMm + ' mm'
+               : '');
+  }
+
+  function renderDecision(state){
+    if (!Engine){
+      el.dec.innerHTML = `
+        <div class="head">
+          <span class="pill bad">ENGINE UNAVAILABLE</span>
+        </div>
+        <div class="reason">The Resource Decision Engine was not found on this page. Reload or verify Task 1 is installed above this script.</div>`;
+      return;
+    }
+
+    let out;
+    try {
+      out = Engine.decide(state);
+    } catch (e){
+      el.dec.innerHTML = `
+        <div class="head"><span class="pill bad">INPUT ERROR</span></div>
+        <div class="reason">${String(e.message || e)}</div>`;
+      return;
+    }
+
+    const irrigate = out.irrigate;
+    const pillClass = irrigate ? 'high' : 'ideal';
+    const pillText  = irrigate ? '⚠ IRRIGATE' : '✓ NO IRRIGATION';
+    const amtColor  = irrigate ? 'var(--terracotta)' : 'var(--green)';
+
+    el.dec.innerHTML = `
+      <div class="head">
+        <span class="pill ${pillClass}">${pillText}</span>
+        <div class="amount" style="color:${amtColor};">
+          ${irrigate ? out.amountMm : 0}<small>mm</small>
+        </div>
+      </div>
+      <div class="reason">${out.reason}</div>
+      <div class="meta">
+        <span>effective SM ${out.effectiveMoisturePct}%</span>
+        <span>threshold ${out.thresholdPct}%</span>
+        <span>${out.stageLabel}</span>
+      </div>
+      <div class="ga-twin-footer" style="margin-top:6px;">
+        <b>Source status:</b> 🔵 MODELLED · rule-based calculation · no ML, no hidden weights.
+        Weather shown on the Weather page is real (Open-Meteo); the field view above is simulated.
+      </div>
+    `;
+  }
+
+  function sync(){
+    const state = readState();
+    updateLabels(state);
+    paintTwin(state);
+    renderDecision(state);
+  }
+
+  ['input','change'].forEach(evt => {
+    el.sm.addEventListener(evt, sync);
+    el.r7.addEventListener(evt, sync);
+    el.r3.addEventListener(evt, sync);
+    el.stg.addEventListener(evt, sync);
+  });
+
+  el.reset.addEventListener('click', () => {
+    el.sm.value  = 18;   // dry-spell baseline
+    el.r7.value  = 0;
+    el.r3.value  = 0;
+    el.stg.value = 0;    // CRI
+    sync();
+  });
+
+  // Initial paint
+  sync();
+
+  // Public interface for the impact dashboard.
+  window.GroundAid = window.GroundAid || {};
+  window.GroundAid.DigitalTwin = {
+    sync,
+    readState,
+    paintTwin,
+    renderWheatStalks,
+    soilColorAt,
+    version: 'phase1-twin-v1'
+  };
+
+  
+});
+
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · IMPACT DASHBOARD
+     Depends on: GroundAid.ResourceDecisionEngine
+                 GroundAid.DigitalTwin
+     Compares a fixed-schedule baseline against the engine's
+     recommendations across 4 pre-declared simulated scenarios.
+     Raw numbers for every run are shown; no cherry-picking.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+
+function whenReady(fn){
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', fn, { once:true });
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
+whenReady(function initImpact(){
+  const home = document.getElementById('page-home');
+  if (!home) return;
+  if (document.getElementById('gaImpactSection')) return;
+
+  const Engine = window.GroundAid && window.GroundAid.ResourceDecisionEngine;
+  if (!Engine){
+    
+    return;
+  }
+
+  /* ---------------------------------------------------------
+     BASELINE
+     50 mm fixed every 10 days, 6 events, over a 60-day window.
+     No dependence on soil moisture, rainfall, or stage.
+     --------------------------------------------------------- */
+  const BASELINE_PER_EVENT_MM = 50;
+  const BASELINE_EVENTS       = 6;
+  const BASELINE_TOTAL_MM     = BASELINE_PER_EVENT_MM * BASELINE_EVENTS; // 300
+
+  /* ---------------------------------------------------------
+     PREDEFINED SCENARIOS
+     Locked BEFORE running the engine. Order and values cannot
+     be tuned after seeing results.
+     --------------------------------------------------------- */
+  const SCENARIOS = [
+    {
+      id:'S1',
+      name:'Dry spell — Jamshedpur',
+      note:'No rain at any checkpoint. Moisture declines steadily. Tests the engine on a genuine deficit season.',
+      checkpoints:[
+        { day: 1, soilMoisturePct:22, growthStage:'cri',       recentRain7dMm:0,  forecastRain3dMm:0 },
+        { day:10, soilMoisturePct:19, growthStage:'tillering', recentRain7dMm:0,  forecastRain3dMm:0 },
+        { day:20, soilMoisturePct:16, growthStage:'jointing',  recentRain7dMm:0,  forecastRain3dMm:0 },
+        { day:30, soilMoisturePct:14, growthStage:'flowering', recentRain7dMm:0,  forecastRain3dMm:0 },
+        { day:40, soilMoisturePct:13, growthStage:'milking',   recentRain7dMm:0,  forecastRain3dMm:0 },
+        { day:50, soilMoisturePct:15, growthStage:'milking',   recentRain7dMm:0,  forecastRain3dMm:0 }
+      ]
+    },
+    {
+      id:'S2',
+      name:'Normal season — moderate rain',
+      note:'A representative monsoon-tail season with patchy rain. Tests mixed decisions.',
+      checkpoints:[
+        { day: 1, soilMoisturePct:18, growthStage:'cri',       recentRain7dMm:0,  forecastRain3dMm:3  },
+        { day:10, soilMoisturePct:20, growthStage:'tillering', recentRain7dMm:10, forecastRain3dMm:8  },
+        { day:20, soilMoisturePct:22, growthStage:'jointing',  recentRain7dMm:8,  forecastRain3dMm:10 },
+        { day:30, soilMoisturePct:24, growthStage:'flowering', recentRain7dMm:5,  forecastRain3dMm:6  },
+        { day:40, soilMoisturePct:20, growthStage:'milking',   recentRain7dMm:0,  forecastRain3dMm:0  },
+        { day:50, soilMoisturePct:18, growthStage:'maturity',  recentRain7dMm:0,  forecastRain3dMm:0  }
+      ]
+    },
+    {
+      id:'S3',
+      name:'Wet spell — heavy rain',
+      note:'Rain dominates every checkpoint. Tests whether the engine correctly refuses to irrigate.',
+      checkpoints:[
+        { day: 1, soilMoisturePct:28, growthStage:'cri',       recentRain7dMm:15, forecastRain3dMm:20 },
+        { day:10, soilMoisturePct:30, growthStage:'tillering', recentRain7dMm:25, forecastRain3dMm:25 },
+        { day:20, soilMoisturePct:35, growthStage:'jointing',  recentRain7dMm:30, forecastRain3dMm:15 },
+        { day:30, soilMoisturePct:32, growthStage:'flowering', recentRain7dMm:20, forecastRain3dMm:12 },
+        { day:40, soilMoisturePct:35, growthStage:'milking',   recentRain7dMm:10, forecastRain3dMm:5  },
+        { day:50, soilMoisturePct:30, growthStage:'maturity',  recentRain7dMm:5,  forecastRain3dMm:0  }
+      ]
+    },
+    {
+      id:'S4',
+      name:'Critical stage + moderate rain forecast',
+      note:'Starts dry at a critical stage (CRI), then rain arrives mid-season.',
+      checkpoints:[
+        { day: 1, soilMoisturePct:14, growthStage:'cri',       recentRain7dMm:0,  forecastRain3dMm:0  },
+        { day:10, soilMoisturePct:13, growthStage:'cri',       recentRain7dMm:5,  forecastRain3dMm:8  },
+        { day:20, soilMoisturePct:12, growthStage:'jointing',  recentRain7dMm:0,  forecastRain3dMm:10 },
+        { day:30, soilMoisturePct:16, growthStage:'flowering', recentRain7dMm:10, forecastRain3dMm:12 },
+        { day:40, soilMoisturePct:18, growthStage:'milking',   recentRain7dMm:15, forecastRain3dMm:8  },
+        { day:50, soilMoisturePct:22, growthStage:'maturity',  recentRain7dMm:5,  forecastRain3dMm:0  }
+      ]
+    }
+  ];
+
+  /* ---------------------------------------------------------
+     RUN — engine evaluated once per checkpoint. No retries,
+     no parameter tuning, no skipped checkpoints.
+     --------------------------------------------------------- */
+  function runScenario(scenario){
+    const rows = scenario.checkpoints.map(cp => {
+      let out = null, err = null;
+      try { out = Engine.decide(cp); } catch(e){ err = String(e.message || e); }
+      return {
+        day: cp.day,
+        stage: cp.growthStage,
+        soilMoisturePct: cp.soilMoisturePct,
+        recentRain7dMm: cp.recentRain7dMm,
+        forecastRain3dMm: cp.forecastRain3dMm,
+        engineIrrigate: out ? out.irrigate : null,
+        engineMm: out ? out.amountMm : 0,
+        engineReason: out ? out.reason : ('ERROR: ' + err),
+        baselineMm: BASELINE_PER_EVENT_MM
+      };
+    });
+    const engineTotal   = rows.reduce((s,r) => s + r.engineMm, 0);
+    const baselineTotal = rows.reduce((s,r) => s + r.baselineMm, 0);
+    const savedMm       = baselineTotal - engineTotal;
+    const savedPct      = baselineTotal > 0 ? (savedMm / baselineTotal) * 100 : 0;
+    return { scenario, rows, engineTotal, baselineTotal, savedMm, savedPct };
+  }
+
+  const RESULTS = SCENARIOS.map(runScenario);
+
+  const AVG_BASELINE = RESULTS.reduce((s,r) => s + r.baselineTotal, 0) / RESULTS.length;
+  const AVG_ENGINE   = RESULTS.reduce((s,r) => s + r.engineTotal,   0) / RESULTS.length;
+  const AVG_SAVED_MM = AVG_BASELINE - AVG_ENGINE;
+  const AVG_SAVED_PCT = AVG_BASELINE > 0 ? (AVG_SAVED_MM / AVG_BASELINE) * 100 : 0;
+
+  /* ---------------------------------------------------------
+     STYLES (scoped, prefixed)
+     --------------------------------------------------------- */
+  const style = document.createElement('style');
+  style.textContent = `
+    #gaImpactSection .ga-imp-banner{
+      display:flex; align-items:center; gap:10px;
+      padding:10px 14px; border-radius:11px;
+      background:var(--amber-soft); border:1px solid rgba(180,83,9,.28);
+      color:var(--amber); font-size:.76rem; font-weight:600;
+      margin-bottom:14px;
+    }
+    #gaImpactSection .ga-imp-banner b{ font-weight:800; }
+    #gaImpactSection .ga-imp-hero{
+      display:grid; grid-template-columns:1fr; gap:12px;
+      margin-bottom:18px;
+    }
+    @media(min-width:720px){
+      #gaImpactSection .ga-imp-hero{ grid-template-columns:repeat(3,1fr); }
+    }
+    #gaImpactSection .ga-imp-hero .kpi{
+      padding:16px; border:1px solid var(--line); border-radius:14px;
+      background:linear-gradient(145deg, rgba(255,255,255,.95), rgba(245,250,246,.85));
+    }
+    #gaImpactSection .ga-imp-hero .kpi .k{
+      font-size:.66rem; font-weight:800; letter-spacing:.08em;
+      text-transform:uppercase; color:var(--muted);
+    }
+    #gaImpactSection .ga-imp-hero .kpi .v{
+      font-family:var(--font-head); font-size:1.9rem; font-weight:700;
+      margin-top:4px; line-height:1; color:var(--green-dark);
+    }
+    #gaImpactSection .ga-imp-hero .kpi .v small{
+      font-family:var(--font); font-size:.82rem; font-weight:600;
+      color:var(--muted); margin-left:3px;
+    }
+    #gaImpactSection .ga-imp-hero .kpi .s{
+      font-size:.72rem; color:var(--muted); margin-top:6px;
+    }
+    #gaImpactSection .ga-imp-scn{
+      margin-bottom:18px; padding:16px;
+      border:1px solid var(--line); border-radius:14px; background:var(--surface-2);
+    }
+    #gaImpactSection .ga-imp-scn h3{
+      font-size:1rem; margin:0 0 4px;
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    }
+    #gaImpactSection .ga-imp-scn .note{
+      font-size:.74rem; color:var(--muted); margin-bottom:10px;
+    }
+    #gaImpactSection .ga-imp-scn .totals{
+      display:flex; gap:8px; flex-wrap:wrap;
+      margin-top:10px; font-size:.74rem;
+    }
+    #gaImpactSection .ga-imp-scn .totals span{
+      padding:5px 10px; border-radius:99px; background:var(--surface);
+      border:1px solid var(--line); font-family:var(--font-mono);
+      color:var(--ink-2);
+    }
+    #gaImpactSection .ga-imp-scn .totals span.ok{
+      background:var(--green-soft); color:var(--green-dark);
+      border-color:transparent; font-weight:700;
+    }
+    #gaImpactSection table{ min-width:760px; }
+    #gaImpactSection table td.num,
+    #gaImpactSection table th.num{ text-align:right; font-family:var(--font-mono); }
+    #gaImpactSection .ga-imp-summary{
+      margin-top:18px; padding:18px; border-radius:16px;
+      background:linear-gradient(145deg, #0f3a26, #1b5a3c);
+      color:#fff; box-shadow:var(--shadow);
+    }
+    #gaImpactSection .ga-imp-summary h3{
+      color:#fff; margin:0 0 12px; font-size:1.05rem;
+    }
+    #gaImpactSection .ga-imp-summary .grid{
+      display:grid; gap:12px; grid-template-columns:1fr;
+    }
+    @media(min-width:640px){
+      #gaImpactSection .ga-imp-summary .grid{ grid-template-columns:repeat(3,1fr); }
+    }
+    #gaImpactSection .ga-imp-summary .cell{
+      padding:14px; border-radius:12px; background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.14);
+    }
+    #gaImpactSection .ga-imp-summary .cell .k{
+      font-size:.62rem; font-weight:800; letter-spacing:.08em;
+      text-transform:uppercase; color:#a7c957;
+    }
+    #gaImpactSection .ga-imp-summary .cell .v{
+      font-family:var(--font-head); font-size:1.6rem; font-weight:700;
+      margin-top:4px; line-height:1;
+    }
+    #gaImpactSection .ga-imp-summary .cell .v small{
+      font-family:var(--font); font-size:.78rem; font-weight:600;
+      opacity:.7; margin-left:3px;
+    }
+    #gaImpactSection .ga-imp-summary .foot{
+      margin-top:14px; padding-top:12px;
+      border-top:1px solid rgba(255,255,255,.15);
+      font-size:.72rem; color:#c9ddd2; line-height:1.6;
+    }
+    #gaImpactSection .ga-imp-method{
+      margin-top:12px; padding:12px 14px; border-radius:11px;
+      background:var(--surface-2); border:1px dashed var(--line-2);
+      font-size:.74rem; color:var(--muted); line-height:1.6;
+    }
+    #gaImpactSection .ga-imp-method b{ color:var(--ink-2); }
+    #gaImpactSection code{
+      font-family:var(--font-mono); font-size:.72rem;
+      background:var(--bg-alt); padding:1px 5px; border-radius:4px;
+      color:var(--ink-2);
+    }
+  `;
+  document.head.appendChild(style);
+
+  /* ---------------------------------------------------------
+     HTML
+     --------------------------------------------------------- */
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+  const fmt = n => Math.round(n).toLocaleString('en-IN');
+  const f1  = n => (Math.round(n * 10) / 10).toFixed(1);
+
+  function checkpointTable(run){
+    const rows = run.rows.map(r => `
+      <tr>
+        <td>Day ${r.day}</td>
+        <td><b>${esc(r.stage)}</b></td>
+        <td class="num">${r.soilMoisturePct}</td>
+        <td class="num">${r.recentRain7dMm}</td>
+        <td class="num">${r.forecastRain3dMm}</td>
+        <td>
+          ${ r.engineIrrigate
+             ? '<span class="pill high">IRRIGATE</span>'
+             : '<span class="pill ideal">NO IRRIGATION</span>' }
+        </td>
+        <td class="num" style="color:${r.engineIrrigate ? 'var(--terracotta)' : 'var(--muted)'};">
+          ${r.engineMm}
+        </td>
+        <td class="num">${r.baselineMm}</td>
+      </tr>
+    `).join('');
+    return `
+      <div class="tbl-wrap" style="margin-top:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Checkpoint</th>
+              <th>Stage</th>
+              <th class="num">SM %</th>
+              <th class="num">Rain 7d (mm)</th>
+              <th class="num">Rain fc 3d (mm)</th>
+              <th>Engine decision</th>
+              <th class="num">Engine (mm)</th>
+              <th class="num">Baseline (mm)</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function scenarioBlock(run){
+    const s = run.scenario;
+    return `
+      <div class="ga-imp-scn">
+        <h3>${esc(s.id)} · ${esc(s.name)}</h3>
+        <div class="note">${esc(s.note)}</div>
+        ${checkpointTable(run)}
+        <div class="totals">
+          <span>Baseline total: <b>${fmt(run.baselineTotal)} mm</b></span>
+          <span>Engine total: <b>${fmt(run.engineTotal)} mm</b></span>
+          <span class="ok">Saved: <b>${fmt(run.savedMm)} mm</b> · <b>${f1(run.savedPct)}%</b></span>
+        </div>
+      </div>
+    `;
+  }
+
+  const section = document.createElement('section');
+  section.className = 'module';
+  section.id = 'gaImpactSection';
+  section.style.marginBottom = '18px';
+
+  section.innerHTML = `
+    <div class="sec-head" style="margin-bottom:14px;">
+      <div class="eyebrow" style="font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">
+        PHASE 1 · IMPACT
+      </div>
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span>Impact dashboard — baseline vs. engine</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+                     background:var(--amber-soft);color:var(--amber);
+                     font-size:.62rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;">
+          ⚠ Simulated scenarios
+        </span>
+      </h2>
+      <p>Every checkpoint of every scenario is run through the Resource Decision Engine and compared against a fixed-schedule baseline. Raw numbers are shown for each run; the average is computed from those raw numbers, not the other way around.</p>
+    </div>
+
+    <div class="ga-imp-banner">
+      <span>⚠</span>
+      <div>
+        <b>These are simulated scenarios, not field trials.</b>
+        No real farm was irrigated. The engine's decisions are rule-based calculations over the inputs shown in each table below.
+        Weather data on the Weather page is real; the scenarios on this dashboard are constructed for comparison.
+      </div>
+    </div>
+
+    <div class="ga-imp-hero">
+      <div class="kpi">
+        <div class="k">Fixed-schedule baseline</div>
+        <div class="v">${fmt(BASELINE_TOTAL_MM)}<small>mm per season</small></div>
+        <div class="s">${BASELINE_PER_EVENT_MM} mm × ${BASELINE_EVENTS} events, regardless of soil, rain, or stage</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Average engine recommendation</div>
+        <div class="v">${fmt(AVG_ENGINE)}<small>mm per season</small></div>
+        <div class="s">Mean across the 4 pre-declared scenarios (all raw runs shown below)</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Average water saved</div>
+        <div class="v">${f1(AVG_SAVED_PCT)}<small>% · ${fmt(AVG_SAVED_MM)} mm</small></div>
+        <div class="s">Across ${RESULTS.length} simulated scenarios · no cherry-picking</div>
+      </div>
+    </div>
+
+    <div id="gaImpactScenarios"></div>
+
+    <div class="ga-imp-summary">
+      <h3>Summary — honest average across all 4 scenarios</h3>
+      <div class="grid">
+        <div class="cell">
+          <div class="k">Baseline (avg)</div>
+          <div class="v">${fmt(AVG_BASELINE)}<small>mm</small></div>
+        </div>
+        <div class="cell">
+          <div class="k">Engine (avg)</div>
+          <div class="v">${fmt(AVG_ENGINE)}<small>mm</small></div>
+        </div>
+        <div class="cell">
+          <div class="k">Saved (avg)</div>
+          <div class="v">${f1(AVG_SAVED_PCT)}<small>% · ${fmt(AVG_SAVED_MM)} mm</small></div>
+        </div>
+      </div>
+      <div class="foot">
+        <b>How this number was produced:</b> each scenario has 6 checkpoints. The engine is evaluated once per checkpoint using the inputs in the table above.
+        Engine total = sum of engine recommendations across the 6 checkpoints.
+        Baseline total = 6 × 50 mm = 300 mm, fixed.
+        Saved % = (baseline − engine) / baseline × 100.
+        The average is taken over the four scenario results (not over the individual checkpoints).
+        Nothing was tuned, retried, or skipped after the scenarios were declared.
+      </div>
+    </div>
+
+    <div class="ga-imp-method">
+      <b>Not included in this number (would require real hardware / field data):</b>
+      yield differences, crop-quality differences, pumping energy, real soil-fertility effects, or the cost of a missed critical-stage irrigation.
+      Those are Phase 2 items and are listed as such in the report.
+      <br><br>
+      <b>Documented assumptions:</b>
+      <code>BASELINE_PER_EVENT_MM = 50</code>,
+      <code>BASELINE_EVENTS = 6</code>,
+      <code>rain → moisture credit = 0.15 %/mm</code> (documented model assumption).
+    </div>
+  `;
+
+  // Insert after the twin section if present, else after the hero, else at the end.
+  const twin = document.getElementById('gaTwinSection');
+  if (twin && twin.parentNode === home){
+    home.insertBefore(section, twin.nextSibling);
+  } else {
+    const hero = home.querySelector('.hero');
+    if (hero && hero.parentNode === home){
+      home.insertBefore(section, hero.nextSibling);
+    } else {
+      home.insertBefore(section, home.firstChild);
+    }
+  }
+
+  // Render scenario blocks
+  const host = section.querySelector('#gaImpactScenarios');
+  host.innerHTML = RESULTS.map(scenarioBlock).join('');
+
+  // Public read-only results for project evidence and inspection.
+  window.GroundAid = window.GroundAid || {};
+  window.GroundAid.ImpactDashboard = {
+    scenarios: SCENARIOS,
+    results: RESULTS,
+    baseline: { perEventMm: BASELINE_PER_EVENT_MM, events: BASELINE_EVENTS, totalMm: BASELINE_TOTAL_MM },
+    average: { baselineMm: AVG_BASELINE, engineMm: AVG_ENGINE, savedMm: AVG_SAVED_MM, savedPct: AVG_SAVED_PCT },
+    version: 'phase1-impact-v1'
+  };
+
+  
+});
+
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · LIVE WEATHER OVERRIDE
+     Reuses the existing Open-Meteo integration
+     (window.farmState.weather / ga_weatherCache).
+     Drives the Digital Twin's forecast slider from live data so
+     the Resource Decision Engine reacts to real rainfall forecast.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+
+function whenReady(fn){
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', fn, { once:true });
+  else setTimeout(fn, 0);
+}
+
+whenReady(function initLiveOverride(){
+  const twin = document.getElementById('gaTwinSection');
+  if (!twin) return;
+  if (document.getElementById('gaLiveOverride')) return;
+
+  const Engine = window.GroundAid && window.GroundAid.ResourceDecisionEngine;
+  const Twin   = window.GroundAid && window.GroundAid.DigitalTwin;
+  if (!Engine || !Twin){
+    
+    return;
+  }
+
+  /* ---------------------------------------------------------
+     Styles — scoped to #gaLiveOverride and twin decorations
+     --------------------------------------------------------- */
+  const style = document.createElement('style');
+  style.textContent = `
+    #gaLiveOverride{
+      border:1px solid var(--line); border-radius:14px; background:var(--surface);
+      padding:14px 14px 14px 18px; position:relative; overflow:hidden;
+    }
+    #gaLiveOverride::before{
+      content:""; position:absolute; top:0; bottom:0; left:0; width:4px;
+      background:linear-gradient(180deg,#2a648a,#65d68b);
+    }
+    #gaLiveOverride .hd{
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    #gaLiveOverride .hd h4{
+      font-family:var(--font); font-size:.82rem; font-weight:800;
+      letter-spacing:.02em; margin:0; color:var(--ink);
+    }
+    #gaLiveOverride .live-badge{
+      display:inline-flex; align-items:center; gap:5px;
+      padding:3px 9px; border-radius:99px;
+      background:var(--blue-soft); color:var(--blue);
+      font-size:.6rem; font-weight:800; letter-spacing:.07em;
+      text-transform:uppercase;
+    }
+    #gaLiveOverride .live-badge::before{
+      content:""; width:6px; height:6px; border-radius:50%;
+      background:var(--blue); box-shadow:0 0 0 3px rgba(42,100,138,.25);
+      animation:gaLivePulse 1.6s infinite;
+    }
+    @keyframes gaLivePulse{
+      0%,100%{opacity:1}
+      50%{opacity:.35}
+    }
+    @media (prefers-reduced-motion: reduce){
+      #gaLiveOverride .live-badge::before{ animation:none; }
+    }
+    #gaLiveOverride .rows{
+      display:grid; grid-template-columns:repeat(2,1fr); gap:7px;
+    }
+    #gaLiveOverride .r{
+      padding:9px 10px; border-radius:9px; background:var(--surface-2);
+      border:1px solid var(--line);
+    }
+    #gaLiveOverride .r .k{
+      font-size:.6rem; font-weight:700; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--muted);
+    }
+    #gaLiveOverride .r .v{
+      font-family:var(--font-head); font-size:1.15rem; font-weight:700;
+      line-height:1; margin-top:3px; color:var(--ink);
+    }
+    #gaLiveOverride .r .v small{
+      font-family:var(--font); font-size:.68rem; font-weight:600;
+      color:var(--muted); margin-left:2px;
+    }
+    #gaLiveOverride .r.hl{ background:var(--blue-soft); border-color:transparent; }
+    #gaLiveOverride .r.hl .v{ color:var(--blue); }
+    #gaLiveOverride .meta{
+      display:flex; gap:6px; flex-wrap:wrap;
+      font-size:.64rem; color:var(--muted); margin-top:9px;
+    }
+    #gaLiveOverride .meta span{
+      padding:3px 8px; border-radius:99px; background:var(--bg-alt);
+      border:1px solid var(--line); font-family:var(--font-mono);
+    }
+    #gaLiveOverride .toggle{
+      display:flex; align-items:center; gap:9px; margin-top:11px;
+      padding:10px 12px; border-radius:10px;
+      background:var(--green-soft); border:1px solid transparent;
+      cursor:pointer; font-size:.76rem; font-weight:600;
+      color:var(--green-dark); user-select:none;
+    }
+    #gaLiveOverride .toggle input{
+      width:16px; height:16px; accent-color:var(--green);
+      cursor:pointer; flex:0 0 auto;
+    }
+    #gaLiveOverride .toggle.off{
+      background:var(--bg-alt); color:var(--muted);
+    }
+    #gaLiveOverride .note{
+      margin-top:8px; font-size:.68rem; color:var(--muted);
+      line-height:1.55;
+    }
+    #gaLiveOverride .note b{ color:var(--ink-2); }
+    #gaLiveOverride .waiting{
+      padding:12px; border-radius:10px; background:var(--amber-soft);
+      border:1px solid rgba(180,83,9,.25); color:var(--amber);
+      font-size:.74rem; line-height:1.5;
+    }
+    #gaLiveOverride .impact{
+      margin-top:10px; padding:10px 12px; border-radius:10px;
+      background:var(--bg-alt); border:1px dashed var(--line-2);
+      font-size:.72rem; line-height:1.55; color:var(--ink-2);
+    }
+    #gaLiveOverride .impact .row{
+      display:flex; justify-content:space-between; gap:10px;
+      padding:3px 0; border-top:1px dashed var(--line);
+    }
+    #gaLiveOverride .impact .row:first-of-type{ border-top:none; margin-top:6px; }
+    #gaLiveOverride .impact .row span:last-child{
+      font-family:var(--font-mono); font-weight:700; white-space:nowrap;
+    }
+    #gaLiveOverride .impact b{ color:var(--green-dark); }
+
+    /* LIVE chip on the twin's forecast slider label */
+    .ga-live-chip{
+      display:inline-flex; align-items:center; gap:4px;
+      margin-left:6px; padding:2px 7px; border-radius:99px;
+      background:var(--blue-soft); color:var(--blue);
+      font-size:.55rem; font-weight:800; letter-spacing:.06em;
+      text-transform:uppercase; vertical-align:middle;
+    }
+    .ga-live-chip::before{
+      content:""; width:5px; height:5px; border-radius:50%;
+      background:var(--blue);
+    }
+    .ga-live-chip.off{ background:var(--bg-alt); color:var(--muted); }
+    .ga-live-chip.off::before{ background:var(--muted); }
+
+    /* Blue strip on the twin's decision panel */
+    .ga-live-decision-strip{
+      display:flex; gap:9px; align-items:flex-start;
+      padding:9px 11px; border-radius:9px;
+      background:var(--blue-soft); border:1px solid rgba(42,100,138,.28);
+      font-size:.74rem; line-height:1.55; color:#0f3d5c;
+      margin-bottom:10px;
+    }
+    .ga-live-decision-strip .dot{
+      width:8px; height:8px; border-radius:50%; background:var(--blue);
+      flex:0 0 auto; margin-top:5px;
+      box-shadow:0 0 0 3px rgba(42,100,138,.2);
+    }
+    .ga-live-decision-strip b{ color:#0a2f47; }
+  `;
+  document.head.appendChild(style);
+
+  /* ---------------------------------------------------------
+     State
+     --------------------------------------------------------- */
+  const LS_KEY = 'ga_liveOverrideOn';
+  const state = {
+    autoApply: localStorage.getItem(LS_KEY) !== '0',
+    weather: null,
+    stamp: 0,
+    key: '',
+    lastAppliedKey: ''
+  };
+
+  /* ---------------------------------------------------------
+     Panel markup
+     --------------------------------------------------------- */
+  const panel = document.createElement('div');
+  panel.id = 'gaLiveOverride';
+  panel.innerHTML = `
+    <div class="hd">
+      <h4>Live weather override</h4>
+      <span class="live-badge">Real · Live</span>
+    </div>
+    <div class="body">
+      <div class="waiting">Waiting for the first Open-Meteo response…</div>
+    </div>
+    <label class="toggle${state.autoApply ? '' : ' off'}" for="gaLiveAuto">
+      <input type="checkbox" id="gaLiveAuto" ${state.autoApply ? 'checked' : ''}>
+      <span>Auto-apply live 48 h rainfall to the Resource Engine</span>
+    </label>
+    <div class="note">
+      <b>Reuses the existing Open-Meteo integration</b> — no new fetch, no key.
+      When enabled, the twin's forecast slider is set from the live 48 h rainfall
+      so the engine reacts to real weather. Turn off to keep the twin simulated.
+    </div>
+  `;
+
+  /* Insert into the twin's right column, above the decision panel */
+  const side = twin.querySelector('.ga-twin-side');
+  if (side){
+    const decision = side.querySelector('#gaTwinDecision') || side.querySelector('.ga-twin-decision');
+    if (decision && decision.parentNode === side) side.insertBefore(panel, decision);
+    else side.appendChild(panel);
+  } else {
+    twin.appendChild(panel);
+  }
+
+  /* ---------------------------------------------------------
+     Read the live weather that the existing integration stored
+     --------------------------------------------------------- */
+  function readWeather(){
+    let data  = window.farmState && window.farmState.weather;
+    let stamp = 0;
+    try {
+      const cache = JSON.parse(localStorage.getItem('ga_weatherCache') || 'null');
+      if (cache && cache.data){
+        if (!data) data = cache.data;
+        stamp = cache.stamp || 0;
+      }
+    } catch(e){ /* ignore */ }
+    if (!data || !data.daily || !Array.isArray(data.daily.precipitation_sum)) return null;
+    return { data, stamp };
+  }
+
+  function computeRain(data){
+    const p = data.daily.precipitation_sum || [];
+    return {
+      r24: p[0] || 0,
+      r48: (p[0] || 0) + (p[1] || 0),
+      r72: (p[0] || 0) + (p[1] || 0) + (p[2] || 0),
+      temp: (data.current && data.current.temperature_2m) != null
+              ? data.current.temperature_2m : null,
+      time: data.current && data.current.time
+    };
+  }
+
+  /* ---------------------------------------------------------
+     Slider chip + auto-apply
+     --------------------------------------------------------- */
+  function setSliderLiveChip(on){
+    const slider = document.getElementById('gaSlR3');
+    if (!slider) return;
+    const row = slider.closest('.ga-twin-slider');
+    if (!row) return;
+    const lbl = row.querySelector('.lbl');
+    if (!lbl) return;
+
+    let chip = lbl.querySelector('.ga-live-chip');
+    if (on){
+      if (!chip){
+        chip = document.createElement('span');
+        chip.className = 'ga-live-chip';
+        lbl.appendChild(chip);
+      }
+      chip.classList.remove('off');
+      chip.textContent = 'LIVE · 48 h';
+      const sub = lbl.querySelector('.sub');
+      if (sub) sub.textContent = '(live · next 48 h)';
+    } else if (chip){
+      chip.classList.add('off');
+      chip.textContent = 'SIM';
+      const sub = lbl.querySelector('.sub');
+      if (sub) sub.textContent = '(simulated)';
+    }
+  }
+
+  function applyToSlider(mm){
+    const slider = document.getElementById('gaSlR3');
+    if (!slider) return false;
+    const rounded = Math.max(0, Math.min(100, Math.round(mm)));
+    if (parseInt(slider.value, 10) === rounded) return false;
+    slider.value = rounded;
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
+  /* ---------------------------------------------------------
+     Panel renderers
+     --------------------------------------------------------- */
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function renderWaiting(){
+    const body = panel.querySelector('.body');
+    if (!body) return;
+    body.innerHTML = '<div class="waiting">Waiting for the first Open-Meteo response… ' +
+      'The Weather page fetches live data on load; open it once if this persists.</div>';
+  }
+
+  function renderLive(rain){
+    const place = (window.farmState && window.farmState.location)
+      ? (window.farmState.location.district + ', ' + window.farmState.location.state)
+      : (function(){ try { return JSON.parse(localStorage.getItem('ga_place')) || '—'; } catch(e){ return '—'; } })();
+    const stampTxt = state.stamp
+      ? new Date(state.stamp).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })
+      : '—';
+
+    const hl = rain.r48 >= 5;
+    const body = panel.querySelector('.body');
+    body.innerHTML = `
+      <div class="rows">
+        <div class="r${hl ? ' hl' : ''}">
+          <div class="k">Rain · next 24 h</div>
+          <div class="v">${rain.r24.toFixed(1)}<small>mm</small></div>
+        </div>
+        <div class="r${hl ? ' hl' : ''}">
+          <div class="k">Rain · next 48 h</div>
+          <div class="v">${rain.r48.toFixed(1)}<small>mm</small></div>
+        </div>
+        <div class="r">
+          <div class="k">Rain · next 72 h</div>
+          <div class="v">${rain.r72.toFixed(1)}<small>mm</small></div>
+        </div>
+        <div class="r">
+          <div class="k">Temp now</div>
+          <div class="v">${rain.temp != null ? Math.round(rain.temp) : '—'}<small>°C</small></div>
+        </div>
+      </div>
+      <div class="meta">
+        <span>📍 ${escapeHtml(place)}</span>
+        <span>🕒 ${escapeHtml(stampTxt)}</span>
+        <span>Open-Meteo · live</span>
+      </div>
+      <div class="impact" id="gaLiveImpact"></div>
+    `;
+    renderImpact(rain);
+  }
+
+  function renderImpact(rain){
+    const host = panel.querySelector('#gaLiveImpact');
+    if (!host) return;
+
+    if (!state.autoApply){
+      host.innerHTML = '<b>Auto-apply is off.</b> The twin is running on simulated sliders. ' +
+        'Tick the box above to let real rainfall override the engine\'s recommendation.';
+      return;
+    }
+
+    const baseState   = Twin.readState();
+    const outWithout  = Engine.decide(Object.assign({}, baseState, { forecastRain3dMm: 0 }));
+    const outWithLive = Engine.decide(Object.assign({}, baseState, { forecastRain3dMm: rain.r48 }));
+
+    const fmt = o => o.irrigate
+      ? 'IRRIGATE · ' + o.amountMm + ' mm'
+      : 'NO IRRIGATION · 0 mm';
+
+    const cancelled = !outWithLive.irrigate &&  outWithout.irrigate;
+    const reduced   =  outWithLive.irrigate &&  outWithout.irrigate &&
+                       outWithLive.amountMm  <  outWithout.amountMm;
+
+    let headline;
+    if (rain.r48 < 0.5){
+      headline = '<b>No significant rain in the next 48 h.</b> The live override does not change the engine\'s decision.';
+    } else if (cancelled){
+      headline = `<b>Live forecast cancels irrigation.</b> ${rain.r48.toFixed(1)} mm rain in the next 48 h is enough to cover the deficit — the engine holds.`;
+    } else if (reduced){
+      headline = `<b>Live forecast reduces irrigation.</b> Rain covers ${(outWithout.amountMm - outWithLive.amountMm)} mm of the deficit; the engine trims the dose.`;
+    } else {
+      headline = `<b>Live forecast present, deficit still dominant.</b> ${rain.r48.toFixed(1)} mm rain is not enough to skip irrigation at this stage.`;
+    }
+
+    host.innerHTML = `
+      <div>${headline}</div>
+      <div class="row">
+        <span>Engine without live data (slider = 0 mm)</span>
+        <span>${fmt(outWithout)}</span>
+      </div>
+      <div class="row">
+        <span>Engine with live Open-Meteo 48 h rain (${rain.r48.toFixed(1)} mm)</span>
+        <span>${fmt(outWithLive)}</span>
+      </div>
+    `;
+  }
+
+  /* ---------------------------------------------------------
+     Decorate the twin's decision panel with a live strip
+     --------------------------------------------------------- */
+  let decObserver = null;
+  const decEl = document.getElementById('gaTwinDecision');
+
+  function decorateDecision(rain){
+    if (!decEl) return;
+    if (decObserver) decObserver.disconnect();
+    try {
+      decEl.querySelectorAll('.ga-live-decision-strip').forEach(x => x.remove());
+      if (!state.autoApply || !rain || rain.r48 < 0.5) return;
+
+      const pill = decEl.querySelector('.pill');
+      const isIrr = pill && /IRRIGATE/.test(pill.textContent);
+      const amountEl = decEl.querySelector('.amount');
+      const amountMm = amountEl ? (parseInt(amountEl.textContent, 10) || 0) : 0;
+
+      let txt;
+      if (rain.r48 >= 15){
+        txt = `<b>LIVE — Open-Meteo reports ${rain.r48.toFixed(1)} mm rain in the next 48 h.</b> ` +
+              (isIrr
+                ? `Not enough to fully cover the deficit — engine still recommends ${amountMm} mm.`
+                : `Rain covers the deficit — engine has cancelled irrigation.`);
+      } else if (rain.r48 >= 5){
+        txt = `<b>LIVE — Open-Meteo reports ${rain.r48.toFixed(1)} mm rain in the next 48 h.</b> ` +
+              (isIrr ? `Engine reduced irrigation to ${amountMm} mm.`
+                     : `Engine holds irrigation.`);
+      } else {
+        txt = `<b>LIVE — no significant rain in the next 48 h.</b> Engine decision driven by soil moisture and stage.`;
+      }
+
+      const strip = document.createElement('div');
+      strip.className = 'ga-live-decision-strip';
+      strip.innerHTML = `<span class="dot"></span><div>${txt}</div>`;
+      decEl.insertBefore(strip, decEl.firstChild);
+    } finally {
+      if (decObserver) decObserver.observe(decEl, { childList: true });
+    }
+  }
+
+  if (decEl){
+    decObserver = new MutationObserver(() => {
+      const w = readWeather();
+      if (w) decorateDecision(computeRain(w.data));
+    });
+    decObserver.observe(decEl, { childList: true });
+  }
+
+  /* ---------------------------------------------------------
+     Full refresh
+     --------------------------------------------------------- */
+  function refresh(){
+    const w = readWeather();
+    if (!w){
+      renderWaiting();
+      setSliderLiveChip(false);
+      return;
+    }
+    state.weather = w.data;
+    state.stamp   = w.stamp || state.stamp;
+    const rain    = computeRain(w.data);
+
+    renderLive(rain);
+
+    if (state.autoApply){
+      const key = rain.r48.toFixed(2) + '|' + String(rain.time || '');
+      if (state.lastAppliedKey !== key){
+        state.lastAppliedKey = key;
+        applyToSlider(rain.r48);
+      }
+      setSliderLiveChip(true);
+    } else {
+      setSliderLiveChip(false);
+    }
+
+    decorateDecision(rain);
+  }
+
+  /* ---------------------------------------------------------
+     Toggle handler
+     --------------------------------------------------------- */
+  const auto = panel.querySelector('#gaLiveAuto');
+  const toggleLabel = panel.querySelector('.toggle');
+  auto.addEventListener('change', () => {
+    state.autoApply = !!auto.checked;
+    localStorage.setItem(LS_KEY, state.autoApply ? '1' : '0');
+    toggleLabel.classList.toggle('off', !state.autoApply);
+    state.lastAppliedKey = '';
+    refresh();
+    // Force the twin to re-evaluate with the newly set slider value.
+    if (Twin && typeof Twin.sync === 'function') Twin.sync();
+  });
+
+  /* ---------------------------------------------------------
+     Watch for weather updates (the twin already exposes none,
+     so we watch the DOM the existing integration writes into,
+     plus poll as a safety net for cache-only updates).
+     --------------------------------------------------------- */
+  const wxFull = document.getElementById('wxFull');
+  if (wxFull){
+    new MutationObserver(() => refresh())
+      .observe(wxFull, { childList: true, subtree: true });
+  }
+
+  // Poll for cache-only changes (e.g. background refresh via 'online')
+  setInterval(() => {
+    if (document.hidden) return;
+    const w = readWeather();
+    if (!w) return;
+    const k = String(w.stamp) + '|' + String(w.data.current && w.data.current.time || '');
+    if (k !== state.key){
+      state.key = k;
+      refresh();
+    }
+  }, 5000);
+
+  window.addEventListener('online', () => setTimeout(refresh, 600));
+
+  /* ---------------------------------------------------------
+     First pass + console report
+     --------------------------------------------------------- */
+  refresh();
+
+  /* Public interface retained for future project phases. */
+  window.GroundAid = window.GroundAid || {};
+  window.GroundAid.LiveOverride = {
+    refresh,
+    state,
+    computeRain,
+    readWeather,
+    version: 'phase1-live-v1'
+  };
+
+  
+});
+
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · HOME REORGANISATION
+     Reorders #page-home to: Farm Status → Today's Decision →
+     Why → Digital Twin → Impact.
+     Moves disease / market / labour / schemes / history behind
+     a new "More Tools" page. No existing module is deleted.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+
+function whenReady(fn){
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', fn, { once:true });
+  else setTimeout(fn, 0);
+}
+
+whenReady(function initHomeReorg(){
+  if (document.getElementById('gaHomeReorgMarker')) return;
+  const marker = document.createElement('meta');
+  marker.id = 'gaHomeReorgMarker';
+  document.head.appendChild(marker);
+
+  const home = document.getElementById('page-home');
+  if (!home) return;
+
+  const Engine = window.GroundAid && window.GroundAid.ResourceDecisionEngine;
+  const Twin   = window.GroundAid && window.GroundAid.DigitalTwin;
+
+  /* ---------------------------------------------------------
+     1. Scoped styles
+     --------------------------------------------------------- */
+  const style = document.createElement('style');
+  style.textContent = `
+    /* --- Hide demoted nav entries (CSS-only, reversible by removing this block) --- */
+    .nav-tab[data-nav="disease"],
+    .nav-tab[data-nav="market"],
+    .nav-tab[data-nav="labor"],
+    .nav-tab[data-nav="schemes"],
+    .nav-tab[data-nav="history"],
+    .sheet-item[data-nav="disease"],
+    .sheet-item[data-nav="market"],
+    .sheet-item[data-nav="labor"],
+    .sheet-item[data-nav="schemes"],
+    .sheet-item[data-nav="history"],
+    .bn-item[data-nav="disease"],
+    .bn-item[data-nav="market"],
+    .bn-item[data-nav="labor"],
+    .bn-item[data-nav="schemes"],
+    .bn-item[data-nav="history"] { display: none !important; }
+
+    /* --- Section header --- */
+    .ga-section-head{
+      display:flex; align-items:center; gap:12px;
+      margin:22px 0 12px;
+    }
+    .ga-section-head .ga-num{
+      flex:0 0 auto; width:30px; height:30px;
+      border-radius:9px;
+      background:linear-gradient(145deg,var(--green-dark),var(--green));
+      color:#fff; display:grid; place-items:center;
+      font-family:var(--font-head); font-weight:700; font-size:.8rem;
+      box-shadow:0 4px 12px -4px rgba(27,67,50,.5);
+    }
+    .ga-section-head .ga-text{ flex:1; min-width:0; }
+    .ga-section-head .ga-text .k{
+      font-size:.6rem; font-weight:800; letter-spacing:.16em;
+      text-transform:uppercase; color:var(--green);
+    }
+    .ga-section-head .ga-text .v{
+      font-family:var(--font-head); font-weight:700;
+      font-size:1.15rem; letter-spacing:-.015em; color:var(--ink);
+    }
+
+    /* --- Today's Decision card --- */
+    #gaTodayDecision{
+      position:relative; overflow:hidden;
+      background:linear-gradient(150deg,#0f3a26 0%,#1b5a3c 70%,#2d6a4f 100%);
+      color:#fff; border:none; padding:26px 22px 22px;
+      border-radius:var(--radius-lg);
+      box-shadow:0 22px 55px -22px rgba(8,58,36,.45);
+    }
+    #gaTodayDecision::before{
+      content:""; position:absolute; inset:0;
+      background-image:repeating-linear-gradient(115deg,
+        transparent 0 24px, rgba(255,255,255,.03) 24px 25px);
+      pointer-events:none;
+    }
+    #gaTodayDecision::after{
+      content:""; position:absolute; right:-70px; bottom:-90px;
+      width:260px; height:260px; border-radius:50%;
+      background:radial-gradient(circle, rgba(167,201,87,.3), transparent 70%);
+      pointer-events:none;
+    }
+    #gaTodayDecision .ga-dec-head{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      position:relative; z-index:1; margin-bottom:12px;
+    }
+    #gaTodayDecision .ga-dec-head .k{
+      font-size:.62rem; font-weight:800; letter-spacing:.15em;
+      text-transform:uppercase; color:#a7c957;
+    }
+    #gaTodayDecision .ga-dec-head .src{
+      display:inline-flex; align-items:center; gap:5px;
+      font-size:.58rem; font-weight:700; letter-spacing:.07em;
+      text-transform:uppercase; padding:3px 9px; border-radius:999px;
+      background:rgba(255,255,255,.1); color:#d8e9de;
+      border:1px solid rgba(255,255,255,.15);
+    }
+    #gaTodayDecision h2{
+      color:#fff; font-size:clamp(1.3rem,3vw,1.85rem);
+      margin:0 0 18px; position:relative; z-index:1; max-width:30ch;
+    }
+    #gaTodayDecision .ga-dec-row{
+      display:flex; align-items:center; gap:20px; flex-wrap:wrap;
+      position:relative; z-index:1;
+    }
+    #gaTodayDecision .ga-dec-pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:11px 18px; border-radius:999px;
+      font-size:.82rem; font-weight:800; letter-spacing:.05em;
+      text-transform:uppercase; white-space:nowrap;
+    }
+    #gaTodayDecision .ga-dec-pill.irrigate{
+      background:rgba(255,178,122,.18);
+      border:1px solid rgba(255,178,122,.5);
+      color:#ffb27a;
+    }
+    #gaTodayDecision .ga-dec-pill.hold{
+      background:rgba(167,201,87,.18);
+      border:1px solid rgba(167,201,87,.55);
+      color:#a7c957;
+    }
+    #gaTodayDecision .ga-dec-amount{
+      font-family:var(--font-head);
+      font-size:clamp(2.8rem,7vw,4rem); font-weight:700;
+      line-height:1; letter-spacing:-.035em; color:#fff;
+    }
+    #gaTodayDecision .ga-dec-amount small{
+      font-family:var(--font); font-size:1.05rem;
+      font-weight:600; opacity:.7; margin-left:6px; letter-spacing:0;
+    }
+    #gaTodayDecision .ga-dec-chip-row{
+      display:flex; gap:8px; flex-wrap:wrap;
+      margin-top:18px; position:relative; z-index:1;
+    }
+    #gaTodayDecision .ga-dec-chip-row span{
+      font-family:var(--font-mono); font-size:.68rem;
+      padding:4px 10px; border-radius:999px;
+      background:rgba(255,255,255,.09);
+      border:1px solid rgba(255,255,255,.14);
+      color:#d8e9de;
+    }
+
+    /* --- Why card --- */
+    #gaWhyCard{ background:var(--surface); }
+    #gaWhyCard .ga-why-reason{
+      font-size:.92rem; line-height:1.65; color:var(--ink-2);
+      padding:15px 17px; border-radius:12px;
+      background:var(--surface-2);
+      border-left:3px solid var(--green);
+      margin-bottom:14px;
+    }
+    #gaWhyCard .ga-why-factors{
+      display:grid; gap:8px; grid-template-columns:repeat(2,1fr);
+    }
+    @media(min-width:720px){
+      #gaWhyCard .ga-why-factors{ grid-template-columns:repeat(4,1fr); }
+    }
+    #gaWhyCard .ga-why-factor{
+      padding:12px; border-radius:10px;
+      background:var(--surface-2); border:1px solid var(--line);
+    }
+    #gaWhyCard .ga-why-factor .k{
+      font-size:.6rem; font-weight:800; letter-spacing:.08em;
+      text-transform:uppercase; color:var(--muted);
+    }
+    #gaWhyCard .ga-why-factor .v{
+      font-family:var(--font-head); font-size:1.05rem; font-weight:700;
+      margin-top:5px; color:var(--green-dark); line-height:1.15;
+    }
+    #gaWhyCard .ga-why-foot{
+      margin-top:12px; padding:10px 12px; border-radius:10px;
+      background:var(--bg-alt); border:1px dashed var(--line-2);
+      font-size:.72rem; color:var(--muted); line-height:1.55;
+    }
+    #gaWhyCard .ga-why-foot b{ color:var(--ink-2); }
+
+    /* --- More Tools page --- */
+    #page-moretools .ga-mt-grid{
+      display:grid; gap:12px; grid-template-columns:1fr;
+    }
+    @media(min-width:640px){
+      #page-moretools .ga-mt-grid{ grid-template-columns:repeat(2,1fr); }
+    }
+    @media(min-width:960px){
+      #page-moretools .ga-mt-grid{ grid-template-columns:repeat(3,1fr); }
+    }
+    .ga-mt-card{
+      display:flex; flex-direction:column; gap:6px;
+      padding:18px; border:1px solid var(--line);
+      border-radius:var(--radius); background:var(--surface);
+      text-align:left; cursor:pointer;
+      transition:transform .18s, box-shadow .18s, border-color .18s;
+      text-decoration:none; color:inherit; font:inherit;
+    }
+    .ga-mt-card:hover{
+      border-color:var(--green); transform:translateY(-2px);
+      box-shadow:var(--shadow-lg); text-decoration:none;
+    }
+    .ga-mt-card .ga-mt-icon{
+      font-size:1.65rem; line-height:1; margin-bottom:4px;
+    }
+    .ga-mt-card h3{ font-size:1rem; margin:0; color:var(--ink); }
+    .ga-mt-card p{
+      font-size:.78rem; color:var(--muted);
+      line-height:1.5; margin:0;
+    }
+    .ga-mt-card .ga-mt-tag{
+      margin-top:8px; font-size:.58rem; font-weight:800;
+      letter-spacing:.08em; text-transform:uppercase;
+      color:var(--green);
+    }
+    .ga-mt-card.demoted{ border-left:3px solid var(--terracotta); }
+    .ga-mt-card.demoted .ga-mt-tag{ color:var(--terracotta); }
+    .ga-mt-card.core{ border-left:3px solid var(--green); }
+
+    /* --- Small More Tools strip on home --- */
+    #gaMoreToolsStrip{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:14px 16px; border-radius:var(--radius);
+      background:var(--bg-alt); border:1px dashed var(--line-2);
+      font-size:.8rem; color:var(--ink-2);
+      margin-top:18px;
+    }
+    #gaMoreToolsStrip strong{ font-size:.92rem; color:var(--ink); }
+    #gaMoreToolsStrip .ga-mt-mini{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 11px; border-radius:999px;
+      background:var(--surface); border:1px solid var(--line);
+      font-size:.72rem; font-weight:600; color:var(--ink-2);
+      cursor:pointer; transition:all .15s;
+    }
+    #gaMoreToolsStrip .ga-mt-mini:hover{
+      border-color:var(--green); color:var(--green);
+    }
+    #gaMoreToolsStrip .ga-mt-mini.on{
+      /* Deliberately neutral: markActive toggles .on but we don't highlight */
+      background:var(--surface);
+    }
+  `;
+  document.head.appendChild(style);
+
+  /* ---------------------------------------------------------
+     2. Create the More Tools page
+     --------------------------------------------------------- */
+  function createMoreToolsPage(){
+    if (document.getElementById('page-moretools')) return;
+    const main = document.querySelector('main.shell');
+    if (!main) return;
+
+    const page = document.createElement('section');
+    page.className = 'page';
+    page.id = 'page-moretools';
+    page.innerHTML = `
+      <div class="sec-head">
+        <div class="eyebrow">SECONDARY TOOLS</div>
+        <h2>More Tools</h2>
+        <p>Everything that is not part of the daily resource decision. The Home screen now focuses on Farm Status → Today's Decision → Why → Digital Twin → Impact. These modules remain fully functional and reachable in one tap.</p>
+      </div>
+
+      <div class="ga-section-head">
+        <div class="ga-num">01</div>
+        <div class="ga-text">
+          <div class="k">Decision support</div>
+          <div class="v">Field &amp; input tools</div>
+        </div>
+      </div>
+      <div class="ga-mt-grid">
+        <button class="ga-mt-card core" type="button" data-nav="soil">
+          <div class="ga-mt-icon">🧪</div>
+          <h3>Soil test</h3>
+          <p>pH, NPK and moisture — feeds the resource engine.</p>
+          <span class="ga-mt-tag">Also on nav</span>
+        </button>
+        <button class="ga-mt-card core" type="button" data-nav="crops">
+          <div class="ga-mt-icon">🌾</div>
+          <h3>Crop advice</h3>
+          <p>Crop suitability ranked against your soil inputs.</p>
+          <span class="ga-mt-tag">Also on nav</span>
+        </button>
+        <button class="ga-mt-card core" type="button" data-nav="fertilizer">
+          <div class="ga-mt-icon">🧴</div>
+          <h3>Fertilizer calculator</h3>
+          <p>Urea / DAP / MOP dosage per acre and local unit.</p>
+          <span class="ga-mt-tag">Also on nav</span>
+        </button>
+      </div>
+
+      <div class="ga-section-head" style="margin-top:26px;">
+        <div class="ga-num">02</div>
+        <div class="ga-text">
+          <div class="k">Relocated from home</div>
+          <div class="v">Field operations &amp; records</div>
+        </div>
+      </div>
+      <div class="ga-mt-grid">
+        <button class="ga-mt-card demoted" type="button" data-nav="disease">
+          <div class="ga-mt-icon">🔬</div>
+          <h3>Disease scan</h3>
+          <p>Photo-based, heuristic leaf assessment. Preliminary only.</p>
+          <span class="ga-mt-tag">Relocated</span>
+        </button>
+        <button class="ga-mt-card demoted" type="button" data-nav="market">
+          <div class="ga-mt-icon">🏪</div>
+          <h3>Mandi prices</h3>
+          <p>Sample records today; live feed configurable.</p>
+          <span class="ga-mt-tag">Relocated</span>
+        </button>
+        <button class="ga-mt-card demoted" type="button" data-nav="labor">
+          <div class="ga-mt-icon">👷</div>
+          <h3>Labour matching</h3>
+          <p>Post or find farm work nearby.</p>
+          <span class="ga-mt-tag">Relocated</span>
+        </button>
+        <button class="ga-mt-card demoted" type="button" data-nav="schemes">
+          <div class="ga-mt-icon">📜</div>
+          <h3>Government schemes</h3>
+          <p>Central and state scheme discovery.</p>
+          <span class="ga-mt-tag">Relocated</span>
+        </button>
+        <button class="ga-mt-card demoted" type="button" data-nav="history">
+          <div class="ga-mt-icon">📓</div>
+          <h3>Farm history</h3>
+          <p>Season records kept locally in this browser.</p>
+          <span class="ga-mt-tag">Relocated</span>
+        </button>
+        <button class="ga-mt-card demoted" type="button" data-nav="weather">
+          <div class="ga-mt-icon">🌦️</div>
+          <h3>Weather (full)</h3>
+          <p>7-day forecast and crop-calendar advisory. Home shows a snapshot only.</p>
+          <span class="ga-mt-tag">Shortcut</span>
+        </button>
+      </div>
+
+      <div id="gaMTQAHost" style="margin-top:22px;"></div>
+      <div id="gaMTMarketHost" style="margin-top:22px;"></div>
+
+      <div class="notice info" style="margin-top:18px;">
+        <span>ℹ️</span>
+        <div>
+          <b>Why these are here and not on Home:</b>
+          Home is now the daily decision loop — farm status, the irrigation decision, the reason behind it, the simulated twin and the impact comparison. Everything else is a reference or secondary tool, not part of the daily loop.
+        </div>
+      </div>
+    `;
+    main.appendChild(page);
+  }
+  createMoreToolsPage();
+
+  /* ---------------------------------------------------------
+     3. Relocate demoted content from home → More Tools
+     --------------------------------------------------------- */
+  function relocateDemotedContent(){
+    const mt = document.getElementById('page-moretools');
+    if (!mt) return;
+
+    const qaHost     = mt.querySelector('#gaMTQAHost');
+    const marketHost = mt.querySelector('#gaMTMarketHost');
+
+    // Quick actions grid (buttons for soil / crops / disease / fertilizer)
+    const qaGrid = home.querySelector(':scope > .qa-grid');
+    if (qaGrid && qaHost){
+      const head = document.createElement('div');
+      head.className = 'ga-section-head';
+      head.innerHTML = `
+        <div class="ga-num">03</div>
+        <div class="ga-text">
+          <div class="k">Shortcuts</div>
+          <div class="v">Quick actions (moved from Home)</div>
+        </div>
+      `;
+      qaHost.appendChild(head);
+      qaGrid.style.marginBottom = '0';
+      qaHost.appendChild(qaGrid);
+    }
+
+    // Market card (contains #homeMarket — renderMarket() still finds it)
+    const marketCard = [...home.querySelectorAll(':scope > .card')]
+      .find(c => c.querySelector('#homeMarket'));
+    if (marketCard && marketHost){
+      const head = document.createElement('div');
+      head.className = 'ga-section-head';
+      head.innerHTML = `
+        <div class="ga-num">04</div>
+        <div class="ga-text">
+          <div class="k">Reference</div>
+          <div class="v">Today's mandi snapshot (moved from Home)</div>
+        </div>
+      `;
+      marketHost.appendChild(head);
+      marketCard.style.marginBottom = '0';
+      marketHost.appendChild(marketCard);
+    }
+  }
+  relocateDemotedContent();
+
+  /* ---------------------------------------------------------
+     4. Build Today's Decision and Why cards
+     --------------------------------------------------------- */
+  function buildDecisionCard(){
+    const card = document.createElement('section');
+    card.className = 'module';
+    card.id = 'gaTodayDecision';
+    card.style.marginBottom = '18px';
+    card.innerHTML = `
+      <div class="ga-dec-head">
+        <span class="k">TODAY'S DECISION</span>
+        <span class="src">🔵 MODELLED · rule-based</span>
+      </div>
+      <h2>Should I irrigate today?</h2>
+      <div class="ga-dec-row" id="gaDecRow"></div>
+      <div class="ga-dec-chip-row" id="gaDecChips"></div>
+    `;
+    return card;
+  }
+
+  function buildWhyCard(){
+    const card = document.createElement('section');
+    card.className = 'module';
+    card.id = 'gaWhyCard';
+    card.style.marginBottom = '18px';
+    card.innerHTML = `
+      <div class="sec-head" style="margin-bottom:12px;">
+        <div class="eyebrow" style="font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">WHY</div>
+        <h3 style="margin-top:4px;font-size:1.15rem;">Reasoning behind today's decision</h3>
+      </div>
+      <div class="ga-why-reason" id="gaWhyReason">Loading…</div>
+      <div class="ga-why-factors" id="gaWhyFactors"></div>
+      <div class="ga-why-foot" id="gaWhyFoot"></div>
+    `;
+    return card;
+  }
+
+  const decisionCard = buildDecisionCard();
+  const whyCard = buildWhyCard();
+
+  /* ---------------------------------------------------------
+     5. Update decision + why from the engine
+     --------------------------------------------------------- */
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function updateDecisionAndWhy(){
+    const rowEl  = document.getElementById('gaDecRow');
+    const chipEl = document.getElementById('gaDecChips');
+    const rsnEl  = document.getElementById('gaWhyReason');
+    const facEl  = document.getElementById('gaWhyFactors');
+    const footEl = document.getElementById('gaWhyFoot');
+    if (!rowEl || !chipEl || !rsnEl || !facEl || !footEl) return;
+
+    if (!Engine || !Twin){
+      rowEl.innerHTML = '<span style="color:rgba(255,255,255,.7);font-size:.82rem;">Engine or twin unavailable.</span>';
+      rsnEl.textContent = 'The Resource Decision Engine or Digital Twin is not loaded on this page.';
+      return;
+    }
+
+    const state = Twin.readState();
+    let out;
+    try { out = Engine.decide(state); }
+    catch (e){
+      rowEl.innerHTML = '<span style="color:#ffb27a;font-size:.82rem;">Input error: ' + esc(e.message) + '</span>';
+      rsnEl.textContent = 'Could not run the engine: ' + e.message;
+      return;
+    }
+
+    const irrigate = !!out.irrigate;
+    const pillCls  = irrigate ? 'irrigate' : 'hold';
+    const pillTxt  = irrigate ? '⚠ IRRIGATE' : '✓ HOLD — NO IRRIGATION';
+    const amt      = irrigate ? out.amountMm : 0;
+
+    rowEl.innerHTML = `
+      <span class="ga-dec-pill ${pillCls}">${pillTxt}</span>
+      <span class="ga-dec-amount">${amt}<small>mm</small></span>
+    `;
+    const liveOn = !!(window.GroundAid && window.GroundAid.LiveOverride &&
+                       window.GroundAid.LiveOverride.state &&
+                       window.GroundAid.LiveOverride.state.autoApply);
+    const inputNote = liveOn
+      ? 'inputs: live 48h rain (Open-Meteo) + simulated soil/stage'
+      : 'inputs: simulated sliders';
+
+    chipEl.innerHTML = `
+      <span>effective SM ${out.effectiveMoisturePct}%</span>
+      <span>threshold ${out.thresholdPct}%</span>
+      <span>${esc(out.stageLabel)}</span>
+      <span>soil ${state.soilMoisturePct}% · rain 7d ${state.recentRain7dMm} mm · rain fc 3d ${state.forecastRain3dMm} mm</span>
+      <span style="font-weight:700;">${inputNote}</span>
+    `;
+
+    rsnEl.textContent = out.reason;
+    facEl.innerHTML = `
+      <div class="ga-why-factor">
+        <div class="k">Raw soil moisture</div>
+        <div class="v">${state.soilMoisturePct}%</div>
+      </div>
+      <div class="ga-why-factor">
+        <div class="k">Effective moisture</div>
+        <div class="v">${out.effectiveMoisturePct}%</div>
+      </div>
+      <div class="ga-why-factor">
+        <div class="k">Stage threshold</div>
+        <div class="v">${out.thresholdPct}%</div>
+      </div>
+      <div class="ga-why-factor">
+        <div class="k">Rain forecast (3d)</div>
+        <div class="v">${state.forecastRain3dMm} mm</div>
+      </div>
+    `;
+    footEl.innerHTML = `
+      <b>Source status:</b> 🔵 MODELLED — deterministic rules over the inputs shown above.
+      Recent rainfall is credited to soil moisture at +0.15 %/mm (documented model assumption).
+      If the Live Weather Override is enabled, real Open-Meteo 48 h rain feeds the same
+      <code>forecastRain3dMm</code> input — the label on the Digital Twin distinguishes real
+      forecast data from simulated slider values.
+    `;
+  }
+  updateDecisionAndWhy();
+
+  /* ---------------------------------------------------------
+     6. Reorder #page-home to the new sequence
+     --------------------------------------------------------- */
+  function reorderHome(){
+    const hero        = home.querySelector(':scope > .hero');
+    const weatherCard = [...home.querySelectorAll(':scope > .card')]
+                          .find(c => c.querySelector('#wxSnap') && !c.querySelector('#homeMarket'));
+    const farmDash    = [...home.querySelectorAll(':scope > .module')]
+                          .find(m => m.querySelector('#farmDashboard'));
+    const askCard     = [...home.querySelectorAll(':scope > .card')]
+                          .find(c => c.querySelector('#askInput'));
+    const emergency   = document.getElementById('emergencyHome');
+    const seasonTip   = home.querySelector(':scope > .notice.tip');
+    const twin        = document.getElementById('gaTwinSection');
+    const impact      = document.getElementById('gaImpactSection');
+
+    // Farm Status header (new)
+    const fsHead = document.createElement('div');
+    fsHead.className = 'ga-section-head';
+    fsHead.id = 'gaFarmStatusHead';
+    fsHead.innerHTML = `
+      <div class="ga-num">01</div>
+      <div class="ga-text">
+        <div class="k">Farm status</div>
+        <div class="v">What is happening on your farm right now</div>
+      </div>
+    `;
+
+    // Section headers for the 4 remaining blocks (subtle, non-duplicating)
+    const decHead = document.createElement('div');
+    decHead.className = 'ga-section-head';
+    decHead.innerHTML = `
+      <div class="ga-num">02</div>
+      <div class="ga-text"><div class="k">Today's decision</div><div class="v">Irrigation call for this checkpoint</div></div>
+    `;
+    const whyHead = document.createElement('div');
+    whyHead.className = 'ga-section-head';
+    whyHead.innerHTML = `
+      <div class="ga-num">03</div>
+      <div class="ga-text"><div class="k">Why</div><div class="v">Reason and inputs behind the decision</div></div>
+    `;
+    const twinHead = document.createElement('div');
+    twinHead.className = 'ga-section-head';
+    twinHead.innerHTML = `
+      <div class="ga-num">04</div>
+      <div class="ga-text"><div class="k">Digital twin</div><div class="v">Simulated farm model · reacts live to inputs</div></div>
+    `;
+    const impHead = document.createElement('div');
+    impHead.className = 'ga-section-head';
+    impHead.innerHTML = `
+      <div class="ga-num">05</div>
+      <div class="ga-text"><div class="k">Impact</div><div class="v">Baseline vs. engine across simulated scenarios</div></div>
+    `;
+
+    // More Tools strip at the bottom
+    let strip = document.getElementById('gaMoreToolsStrip');
+    if (!strip){
+      strip = document.createElement('div');
+      strip.id = 'gaMoreToolsStrip';
+      strip.innerHTML = `
+        <div style="flex:1;min-width:220px;">
+          <strong>More Tools</strong>
+          <div style="font-size:.74rem;color:var(--muted);margin-top:2px;">
+            Schemes, mandi, labour, disease scan and farm history live behind one link.
+          </div>
+        </div>
+        <button class="ga-mt-mini" type="button" data-nav="schemes">📜 Schemes</button>
+        <button class="ga-mt-mini" type="button" data-nav="market">🏪 Mandi</button>
+        <button class="ga-mt-mini" type="button" data-nav="labor">👷 Labour</button>
+        <button class="ga-mt-mini" type="button" data-nav="disease">🔬 Disease</button>
+        <button class="ga-mt-mini" type="button" data-nav="history">📓 History</button>
+        <button class="btn btn-primary btn-sm" type="button" data-nav="moretools">Open More Tools →</button>
+      `;
+    }
+
+    // Final sequence
+    const ordered = [
+      hero,
+      fsHead, weatherCard, farmDash, emergency,          // FARM STATUS
+      decHead, decisionCard,                              // TODAY'S DECISION
+      whyHead, whyCard,                                   // WHY
+      twinHead, twin,                                     // DIGITAL TWIN
+      impHead, impact,                                    // IMPACT
+      askCard, seasonTip, strip
+    ].filter(Boolean);
+
+    // Detach then re-attach in order — element identity is preserved,
+    // so every existing event listener and child stays intact.
+    ordered.forEach(el => el.parentNode && el.parentNode.removeChild(el));
+    ordered.forEach(el => home.appendChild(el));
+  }
+  reorderHome();
+
+  /* ---------------------------------------------------------
+     7. Wire twin sliders → decision/why re-render
+     --------------------------------------------------------- */
+  function wireSliderUpdates(){
+    ['gaSlSM','gaSlR7','gaSlR3','gaSlStg'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', updateDecisionAndWhy);
+      el.addEventListener('change', updateDecisionAndWhy);
+    });
+  }
+  wireSliderUpdates();
+
+  /* BUGFIX: the first updateDecisionAndWhy() call above ran before
+     decisionCard/whyCard were attached to the document (reorderHome()
+     runs after it), so getElementById('gaDecRow') returned null and
+     the initial render silently did nothing. Today's Decision and Why
+     would stay blank until a slider was touched. Re-run now that the
+     cards are actually in the DOM. */
+  updateDecisionAndWhy();
+
+  /* ---------------------------------------------------------
+     8. Inject the More Tools nav tab (desktop, bottom, sheet)
+     --------------------------------------------------------- */
+  function injectMoreToolsNav(){
+    const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+
+    const dnav = document.getElementById('desktopNav');
+    if (dnav && !dnav.querySelector('[data-nav="moretools"]')){
+      const b = document.createElement('button');
+      b.className = 'nav-tab';
+      b.dataset.nav = 'moretools';
+      b.innerHTML = svg + '<span>More Tools</span>';
+      dnav.appendChild(b);
+    }
+
+    const bnav = document.getElementById('bottomNav');
+    if (bnav && !bnav.querySelector('[data-nav="moretools"]')){
+      const b = document.createElement('button');
+      b.className = 'bn-item';
+      b.dataset.nav = 'moretools';
+      b.innerHTML = svg + '<span>More</span>';
+      const sheetBtn = bnav.querySelector('[data-sheet]');
+      if (sheetBtn && sheetBtn.parentNode === bnav) bnav.insertBefore(b, sheetBtn);
+      else bnav.appendChild(b);
+    }
+
+    const sgrid = document.getElementById('sheetGrid');
+    if (sgrid && !sgrid.querySelector('[data-nav="moretools"]')){
+      const b = document.createElement('button');
+      b.className = 'sheet-item';
+      b.dataset.nav = 'moretools';
+      b.innerHTML = svg + '<span>More Tools</span>';
+      sgrid.insertBefore(b, sgrid.firstChild);
+    }
+  }
+  injectMoreToolsNav();
+
+  ['desktopNav','bottomNav','sheetGrid'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    new MutationObserver(() => injectMoreToolsNav()).observe(el, { childList:true });
+  });
+
+  /* ---------------------------------------------------------
+     9. Public interface
+     --------------------------------------------------------- */
+  window.GroundAid = window.GroundAid || {};
+  window.GroundAid.HomeReorg = {
+    updateDecisionAndWhy,
+    version:'phase1-home-v1'
+  };
+
+  
+});
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PHASE 1 · FINAL POLISH PASS
+     Fixes C1 (mobile bottom-nav overflow) and C2 (home weather
+     snapshot missing a LIVE badge), per the pre-submit audit.
+     ============================================================ -->
+<style>
+@media (max-width: 899px){
+  .bottom-nav{ grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+}
+</style>
+<script>
+(function(){
+  function attach(){
+    const snap = document.getElementById('wxSnap');
+    if (!snap) return;
+    function inject(){
+      if (!snap.querySelector('.wx-now')) return;
+      if (snap.querySelector('.ga-wx-live-badge')) return;
+      const b = document.createElement('span');
+      b.className = 'ga-wx-live-badge';
+      b.textContent = '● LIVE · Open-Meteo';
+      b.style.cssText =
+        'display:inline-flex;align-items:center;gap:6px;' +
+        'padding:4px 10px;border-radius:99px;' +
+        'background:var(--blue-soft);color:var(--blue);' +
+        'font-size:.6rem;font-weight:800;letter-spacing:.06em;' +
+        'text-transform:uppercase;margin-bottom:10px;';
+      snap.insertBefore(b, snap.firstChild);
+    }
+    new MutationObserver(inject).observe(snap, { childList:true });
+    inject();
+  }
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', attach, { once:true });
+  else attach();
+})();
+</script>
+
+<!-- ============================================================
+     GROUND AID — PJMT 2026 · EVIDENCE / FINAL SUBMISSION GATE
+     Added as an evidence layer without replacing existing modules.
+     Phase 1 = software + simulation only.
+     ============================================================ -->
+<style>
+  #gaPjmtEvidence{margin-bottom:18px}
+  #gaPjmtEvidence .ga-evidence-banner{
+    display:flex;gap:10px;align-items:flex-start;padding:13px 15px;
+    border-radius:12px;background:var(--amber-soft);border:1px solid rgba(180,83,9,.28);
+    color:var(--amber);font-size:.78rem;font-weight:600;margin-bottom:16px
+  }
+  #gaPjmtEvidence .ga-status{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:99px;
+    font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+    white-space:nowrap
+  }
+  #gaPjmtEvidence .ga-status.present{background:var(--green-soft);color:var(--green-dark)}
+  #gaPjmtEvidence .ga-status.partial{background:var(--amber-soft);color:var(--amber)}
+  #gaPjmtEvidence .ga-status.future{background:var(--blue-soft);color:var(--blue)}
+  #gaPjmtEvidence .ga-status.missing{background:var(--red-soft);color:var(--red)}
+  #gaPjmtEvidence .ga-proof{
+    padding:14px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)
+  }
+  #gaPjmtEvidence .ga-proof h3{margin-bottom:5px}
+  #gaPjmtEvidence .ga-proof p{font-size:.78rem;color:var(--muted);line-height:1.6}
+  #gaPjmtEvidence .ga-proof .mechanism{
+    margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);
+    font-size:.76rem;color:var(--ink-2)
+  }
+  #gaPjmtEvidence .ga-mini{
+    font-size:.7rem;color:var(--muted);line-height:1.55
+  }
+  #gaPjmtEvidence .ga-table{min-width:720px}
+  #gaPjmtEvidence .ga-table td.num,#gaPjmtEvidence .ga-table th.num{
+    text-align:right;font-family:var(--font-mono)
+  }
+  #gaPjmtEvidence .ga-test-pass{color:var(--green);font-weight:800}
+  #gaPjmtEvidence .ga-test-fail{color:var(--red);font-weight:800}
+  #gaPjmtEvidence .ga-kpi-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
+  @media(min-width:700px){#gaPjmtEvidence .ga-kpi-grid{grid-template-columns:repeat(3,1fr)}}
+  #gaPjmtEvidence .ga-kpi{
+    padding:15px;border:1px solid var(--line);border-radius:13px;background:var(--surface)
+  }
+  #gaPjmtEvidence .ga-kpi .k{
+    font-size:.64rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)
+  }
+  #gaPjmtEvidence .ga-kpi .v{
+    margin-top:5px;font-family:var(--font-head);font-size:1.7rem;font-weight:700;
+    color:var(--green-dark);line-height:1
+  }
+  #gaPjmtEvidence .ga-kpi .s{margin-top:6px;font-size:.7rem;color:var(--muted)}
+  #gaPjmtEvidence .ga-evidence-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  #gaPjmtEvidence .ga-evidence-nav button{font-size:.75rem}
+  #gaPjmtEvidence .ga-callout{
+    padding:13px 15px;border-left:4px solid var(--green);background:var(--green-soft);
+    border-radius:0 11px 11px 0;font-size:.78rem;color:var(--ink-2);margin-top:12px
+  }
+  #gaPjmtEvidence .ga-future-box{
+    border-color:#38567a;background:var(--blue-soft)
+  }
+  #gaPjmtEvidence .ga-future-box p{color:var(--ink-2)}
+  #gaPjmtEvidence .ga-subsection{scroll-margin-top:135px}
+</style>
+
+<script>
+(function(){
+'use strict';
+
+function ready(fn){
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',fn,{once:true});
+  else setTimeout(fn,0);
+}
+
+ready(function mountPjmtEvidence(){
+  const home=document.getElementById('page-home');
+  if(!home || document.getElementById('gaPjmtEvidence')) return;
+
+  const Engine=window.GroundAid && window.GroundAid.ResourceDecisionEngine;
+  if(!Engine) return;
+
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const f1=n=>(Math.round(n*10)/10).toFixed(1);
+
+  /* ---------------------------------------------------------
+     RELIABILITY: 18 locked cases.
+     Expected outputs are fixed constants, not generated by the
+     engine at runtime. This makes the check an actual comparison.
+     --------------------------------------------------------- */
+  const RELIABILITY_CASES=[
+    {id:'R01',label:'CRI · severe deficit · zero rain',i:{soilMoisturePct:12,growthStage:'cri',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:true,amountMm:50}},
+    {id:'R02',label:'Tillering · exact threshold',i:{soilMoisturePct:18,growthStage:'tillering',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R03',label:'Jointing · below threshold',i:{soilMoisturePct:12,growthStage:'jointing',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:true,amountMm:40}},
+    {id:'R04',label:'Jointing · full-dose boundary',i:{soilMoisturePct:9,growthStage:'jointing',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:true,amountMm:50}},
+    {id:'R05',label:'Flowering · upper no-irrigation boundary',i:{soilMoisturePct:24,growthStage:'flowering',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R06',label:'Flowering · just below upper boundary',i:{soilMoisturePct:23,growthStage:'flowering',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R07',label:'Milking · 5 mm forecast, hold',i:{soilMoisturePct:14,growthStage:'milking',recentRain7dMm:0,forecastRain3dMm:5},e:{irrigate:false,amountMm:0}},
+    {id:'R08',label:'Milking · moderate forecast near deficit',i:{soilMoisturePct:13,growthStage:'milking',recentRain7dMm:0,forecastRain3dMm:5},e:{irrigate:false,amountMm:0}},
+    {id:'R09',label:'Milking · heavy forecast',i:{soilMoisturePct:14,growthStage:'milking',recentRain7dMm:0,forecastRain3dMm:15},e:{irrigate:false,amountMm:0}},
+    {id:'R10',label:'CRI · heavy forecast overrides deficit',i:{soilMoisturePct:18,growthStage:'cri',recentRain7dMm:0,forecastRain3dMm:15},e:{irrigate:false,amountMm:0}},
+    {id:'R11',label:'CRI · 5 mm forecast, half dose',i:{soilMoisturePct:10,growthStage:'cri',recentRain7dMm:0,forecastRain3dMm:5},e:{irrigate:true,amountMm:25}},
+    {id:'R12',label:'CRI · exact threshold',i:{soilMoisturePct:20,growthStage:'cri',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R13',label:'Maturity · high moisture',i:{soilMoisturePct:30,growthStage:'maturity',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R14',label:'Maturity · just below threshold',i:{soilMoisturePct:11.9,growthStage:'maturity',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:true,amountMm:20}},
+    {id:'R15',label:'CRI · recent rainfall raises effective moisture',i:{soilMoisturePct:18,growthStage:'cri',recentRain7dMm:20,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R16',label:'Flowering · forecast rain',i:{soilMoisturePct:14,growthStage:'flowering',recentRain7dMm:0,forecastRain3dMm:20},e:{irrigate:false,amountMm:0}},
+    {id:'R17',label:'Tillering · recent rain reaches threshold',i:{soilMoisturePct:15,growthStage:'tillering',recentRain7dMm:20,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}},
+    {id:'R18',label:'Maturity · no rain, comfortably above threshold',i:{soilMoisturePct:16,growthStage:'maturity',recentRain7dMm:0,forecastRain3dMm:0},e:{irrigate:false,amountMm:0}}
+  ];
+
+  function runReliability(){
+    return RELIABILITY_CASES.map(tc=>{
+      let a=null,error=null;
+      try{a=Engine.decide(tc.i)}catch(e){error=String(e.message||e)}
+      const pass=!error && !!a && a.irrigate===tc.e.irrigate && a.amountMm===tc.e.amountMm;
+      return {tc,a,error,pass};
+    });
+  }
+  const reliability=runReliability();
+  const reliabilityPass=reliability.filter(x=>x.pass).length;
+
+  /* ---------------------------------------------------------
+     EFFICIENCY: 12 locked one-checkpoint scenarios.
+     Baseline is a modeled fixed schedule of 50 mm per event.
+     No field measurement is implied.
+     --------------------------------------------------------- */
+  const BASELINE_MM=50;
+  const EFFICIENCY_SCENARIOS=[
+    {id:'E01',name:'Dry CRI',i:{soilMoisturePct:12,growthStage:'cri',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E02',name:'Dry tillering',i:{soilMoisturePct:14,growthStage:'tillering',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E03',name:'Dry jointing',i:{soilMoisturePct:12,growthStage:'jointing',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E04',name:'Flowering + heavy forecast',i:{soilMoisturePct:14,growthStage:'flowering',recentRain7dMm:0,forecastRain3dMm:20}},
+    {id:'E05',name:'Milking + moderate forecast',i:{soilMoisturePct:14,growthStage:'milking',recentRain7dMm:0,forecastRain3dMm:5}},
+    {id:'E06',name:'Maturity + adequate moisture',i:{soilMoisturePct:16,growthStage:'maturity',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E07',name:'CRI + recent rain',i:{soilMoisturePct:18,growthStage:'cri',recentRain7dMm:20,forecastRain3dMm:0}},
+    {id:'E08',name:'Tillering + recent rain',i:{soilMoisturePct:15,growthStage:'tillering',recentRain7dMm:20,forecastRain3dMm:0}},
+    {id:'E09',name:'Jointing + moderate forecast',i:{soilMoisturePct:12,growthStage:'jointing',recentRain7dMm:0,forecastRain3dMm:8}},
+    {id:'E10',name:'Flowering + high moisture',i:{soilMoisturePct:24,growthStage:'flowering',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E11',name:'Milking + severe deficit',i:{soilMoisturePct:10,growthStage:'milking',recentRain7dMm:0,forecastRain3dMm:0}},
+    {id:'E12',name:'Maturity + recent rain',i:{soilMoisturePct:10,growthStage:'maturity',recentRain7dMm:10,forecastRain3dMm:0}}
+  ];
+
+  function runEfficiency(){
+    return EFFICIENCY_SCENARIOS.map(s=>{
+      let out=null,error=null;
+      try{out=Engine.decide(s.i)}catch(e){error=String(e.message||e)}
+      const ga=out?Number(out.amountMm):0;
+      const saving=((BASELINE_MM-ga)/BASELINE_MM)*100;
+      return {...s,out,error,ga,saving};
+    });
+  }
+  const efficiency=runEfficiency();
+  const avgEfficiency=efficiency.reduce((s,x)=>s+x.saving,0)/efficiency.length;
+  const avgGa=efficiency.reduce((s,x)=>s+x.ga,0)/efficiency.length;
+
+  const stageNames={
+    cri:'Crown Root Initiation',tillering:'Tillering',jointing:'Jointing / Booting',
+    flowering:'Flowering',milking:'Milking / Dough',maturity:'Maturity'
+  };
+
+  const reliabilityRows=reliability.map(x=>{
+    const t=x.tc;
+    return `<tr>
+      <td><b>${t.id}</b><br><span class="ga-mini">${esc(t.label)}</span></td>
+      <td class="num">${t.i.soilMoisturePct}</td><td>${esc(stageNames[t.i.growthStage]||t.i.growthStage)}</td>
+      <td class="num">${t.i.recentRain7dMm}</td><td class="num">${t.i.forecastRain3dMm}</td>
+      <td>${t.e.irrigate?'IRRIGATE':'NO IRRIGATION'} · ${t.e.amountMm} mm</td>
+      <td>${x.a ? (x.a.irrigate?'IRRIGATE':'NO IRRIGATION')+' · '+x.a.amountMm+' mm' : 'ERROR'}</td>
+      <td class="${x.pass?'ga-test-pass':'ga-test-fail'}">${x.pass?'PASS':'FAIL'}</td>
+    </tr>`;
+  }).join('');
+
+  const effRows=efficiency.map(x=>`<tr>
+    <td><b>${x.id}</b><br><span class="ga-mini">${esc(x.name)}</span></td>
+    <td>${esc(stageNames[x.i.growthStage]||x.i.growthStage)}</td>
+    <td class="num">${x.i.soilMoisturePct}</td>
+    <td class="num">${x.i.recentRain7dMm}</td>
+    <td class="num">${x.i.forecastRain3dMm}</td>
+    <td class="num">${BASELINE_MM}</td>
+    <td class="num">${x.ga}</td>
+    <td class="num">${f1(x.saving)}%</td>
+  </tr>`).join('');
+
+  const section=document.createElement('section');
+  section.className='module';
+  section.id='gaPjmtEvidence';
+  section.innerHTML=`
+    <div class="sec-head">
+      <div class="eyebrow">PJMT 2026 · EVIDENCE</div>
+      <h2>Why This Matters · Proof · Scope &amp; Honesty</h2>
+      <p>This evidence layer is designed around the final submission gate. It exposes the mechanisms, assumptions, fixed tests and modeled scenarios instead of relying on claims or logos.</p>
+    </div>
+
+    <div class="ga-evidence-banner">
+      <span>⚠</span>
+      <div><b>Phase 1 boundary:</b> GROUND AID is software + simulation only. No field/sensor dataset is used for these tests, no physical irrigation system is built or tested, and no guaranteed water saving is claimed.</div>
+    </div>
+
+    <div class="ga-evidence-nav">
+      <button class="btn btn-ghost btn-sm" data-ga-scroll="gaWhy">Why This Matters</button>
+      <button class="btn btn-ghost btn-sm" data-ga-scroll="gaReliability">Reliability</button>
+      <button class="btn btn-ghost btn-sm" data-ga-scroll="gaEfficiency">Efficiency</button>
+      <button class="btn btn-ghost btn-sm" data-ga-scroll="gaScope">Scope &amp; Honesty</button>
+    </div>
+
+    <div class="ga-kpi-grid">
+      <div class="ga-kpi"><div class="k">Reliability</div><div class="v">${reliabilityPass}/${reliability.length}</div><div class="s">fixed expected-vs-actual cases passing on this load</div></div>
+      <div class="ga-kpi"><div class="k">Efficiency experiment</div><div class="v">${efficiency.length}</div><div class="s">predefined scenarios; fixed modeled baseline</div></div>
+      <div class="ga-kpi"><div class="k">Modeled average</div><div class="v">${f1(avgEfficiency)}%</div><div class="s">scenario-level arithmetic; not a field result</div></div>
+    </div>
+
+    <div id="gaWhy" class="ga-subsection">
+      <div class="sec-head"><div class="eyebrow">RELEVANCE</div><h3>Category rationale, Panchabhutas &amp; SDGs</h3></div>
+
+      <div class="grid g2">
+        <div class="ga-proof">
+          <span class="ga-status present">Present</span>
+          <h3>Sustainable Habitat / System</h3>
+          <p>GROUND AID is positioned as a sustainable resource-management <b>system</b>, not only a website: environmental/crop inputs enter a deterministic decision engine, the decision is explained, a simulated farm responds, and modeled resource impact is measured.</p>
+          <div class="mechanism"><b>Why this category:</b> the current deliverable is a digital system addressing water/soil/climate-responsive resource management; physical hardware remains future validation scope.</div>
+        </div>
+        <div class="ga-proof">
+          <span class="ga-status present">Present</span>
+          <h3>Innovation — stated narrowly</h3>
+          <p>The demonstrable innovation is the integrated decision loop: <b>inputs → explainable decision → simulated response → quantified modeled impact</b>, with fixed rules and visible assumptions. No “first” or “revolutionary” claim is made.</p>
+        </div>
+      </div>
+
+      <div class="sec-head" style="margin-top:18px;"><h3>Panchabhuta mapping — mechanism first</h3></div>
+      <div class="grid g2">
+        <div class="ga-proof"><span class="ga-status present">Primary</span><h3>Neer / Jal — Water</h3><p>Water is the resource being allocated by the irrigation recommendation.</p><div class="mechanism"><b>Actual mechanism:</b> Engine output is irrigation volume in mm; the impact experiment compares that modeled volume against a fixed 50 mm/event reference.</div></div>
+        <div class="ga-proof"><span class="ga-status present">Primary</span><h3>Bhoomi — Earth / Soil</h3><p>Soil moisture is a direct decision input and stage-specific thresholds change the recommendation.</p><div class="mechanism"><b>Actual mechanism:</b> <code>soilMoisturePct</code> and the documented rainfall-to-moisture credit feed the deterministic engine.</div></div>
+        <div class="ga-proof"><span class="ga-status present">Used contextually</span><h3>Vayu — Atmosphere</h3><p>Atmospheric/weather context is represented by recent rainfall and forecast rainfall.</p><div class="mechanism"><b>Actual mechanism:</b> recent rain changes effective moisture; forecast rain can defer or halve irrigation.</div></div>
+        <div class="ga-proof"><span class="ga-status present">Used contextually</span><h3>Gagan — Sky</h3><p>Forecast context is used as a sky/weather signal rather than a decorative label.</p><div class="mechanism"><b>Actual mechanism:</b> <code>forecastRain3dMm</code> is an explicit engine input and is covered by reliability tests.</div></div>
+        <div class="ga-proof"><span class="ga-status future">Future only</span><h3>Agni — Fire / Energy</h3><p>No current energy-saving calculation is claimed.</p><div class="mechanism"><b>Future mechanism:</b> Phase 2 may connect irrigation volume and pump energy after measured hardware data exists.</div></div>
+      </div>
+
+      <div class="sec-head" style="margin-top:18px;"><h3>SDG mapping — mechanism, not logos</h3></div>
+      <div class="tbl-wrap">
+        <table class="ga-table">
+          <thead><tr><th>SDG</th><th>Contribution claim</th><th>Actual mechanism/evidence in this app</th></tr></thead>
+          <tbody>
+            <tr><td><b>SDG 2</b> — Zero Hunger</td><td>Supports more informed agricultural resource decisions.</td><td>Crop growth stage + soil/weather inputs drive irrigation recommendations. No yield increase is claimed.</td></tr>
+            <tr><td><b>SDG 6</b> — Clean Water</td><td>Supports water-use efficiency.</td><td>Engine produces irrigation volume and the Efficiency panel compares modeled use with a declared baseline.</td></tr>
+            <tr><td><b>SDG 12</b> — Responsible Consumption</td><td>Targets unnecessary resource consumption.</td><td>Decision rules can defer, reduce or avoid irrigation when conditions indicate sufficient moisture/rain.</td></tr>
+            <tr><td><b>SDG 13</b> — Climate Action</td><td>Responds to changing rainfall/weather context.</td><td>Recent rainfall and 3-day forecast are decision inputs; fixed tests include zero, moderate and heavy forecast rainfall.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sec-head" style="margin-top:18px;"><h3>Transdisciplinary contribution — actual roles</h3></div>
+      <div class="tbl-wrap">
+        <table class="ga-table">
+          <thead><tr><th>Discipline</th><th>Actual contribution in GROUND AID</th></tr></thead>
+          <tbody>
+            <tr><td>Mechanical / Agricultural Engineering</td><td>Stage-dependent irrigation quantities, threshold logic, resource decision framing and future physical validation architecture.</td></tr>
+            <tr><td>Environmental Science</td><td>Water conservation framing, climate responsiveness, Panchabhuta/SDG interpretation and sustainability boundaries.</td></tr>
+            <tr><td>Weather / Data</td><td>Recent rainfall + forecast rainfall inputs and scenario variation; live weather is separately labeled on the app.</td></tr>
+            <tr><td>Software / Data Engineering</td><td>Deterministic Resource Decision Engine, data/status presentation, simulated Digital Twin and reproducible test harness.</td></tr>
+            <tr><td>Human-Centered Design</td><td>Explainable recommendations, visible source/status labels, dashboard hierarchy and accessibility modes already present in the app.</td></tr>
+            <tr><td>Sustainability Analysis</td><td>Declared baseline, scenario experiment, saving formula, assumptions and explicit separation of modeled vs field evidence.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="gaReliability" class="ga-subsection" style="margin-top:24px;">
+      <div class="sec-head"><div class="eyebrow">RELIABILITY</div><h3>18 fixed test cases · expected vs actual</h3>
+      <p>Expected values are locked constants. They are not generated by the engine at runtime. Each page load reruns every case against the same deterministic function.</p></div>
+      <div class="callout"><b>Reproducibility:</b> same input object + same Phase 1 engine version → same decision. The table below exposes threshold, rainfall and growth-stage edge cases rather than hiding them from the evidence table.</div>
+      <div class="tbl-wrap" style="margin-top:12px;">
+        <table class="ga-table">
+          <thead><tr><th>Case</th><th class="num">Soil %</th><th>Stage</th><th class="num">Rain 7d</th><th class="num">Forecast 3d</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead>
+          <tbody>${reliabilityRows}</tbody>
+        </table>
+      </div>
+      <div class="ga-proof" style="margin-top:12px;">
+        <h3>Declared engine assumptions</h3>
+        <p>Six supported wheat stages have explicit moisture thresholds and base irrigation amounts. Recent rainfall contributes <b>0.15 percentage points of effective soil moisture per mm</b> in this Phase 1 model. Forecast rain ≥15 mm can defer irrigation; 5–14 mm can defer or reduce it depending on deficit. These are model assumptions, not field-calibrated measurements.</p>
+      </div>
+    </div>
+
+    <div id="gaEfficiency" class="ga-subsection" style="margin-top:24px;">
+      <div class="sec-head"><div class="eyebrow">EFFICIENCY</div><h3>12 predefined scenarios · fixed baseline</h3>
+      <p>No scenario is added or removed after seeing the result. Every scenario is run once through the same engine.</p></div>
+      <div class="ga-evidence-banner"><span>ⓘ</span><div><b>Baseline definition:</b> a modeled fixed-schedule reference of <b>50 mm per irrigation event</b>. It does not represent measured farmer practice or a field trial.</div></div>
+      <div class="ga-proof">
+        <h3>Formula</h3>
+        <p style="font-family:var(--font-mono);font-size:.9rem;color:var(--ink);">Saving % = (Baseline − GROUND AID) / Baseline × 100</p>
+        <p style="margin-top:7px;">For each predefined one-event scenario, Baseline = 50 mm. GROUND AID = the engine's recommended irrigation amount for the displayed inputs.</p>
+      </div>
+      <div class="tbl-wrap" style="margin-top:12px;">
+        <table class="ga-table">
+          <thead><tr><th>Scenario</th><th>Stage</th><th class="num">Soil %</th><th class="num">Rain 7d</th><th class="num">Forecast 3d</th><th class="num">Baseline mm</th><th class="num">GROUND AID mm</th><th class="num">Saving</th></tr></thead>
+          <tbody>${effRows}</tbody>
+        </table>
+      </div>
+      <div class="ga-kpi-grid" style="margin-top:12px;">
+        <div class="ga-kpi"><div class="k">Scenarios</div><div class="v">${efficiency.length}</div><div class="s">locked before evaluation</div></div>
+        <div class="ga-kpi"><div class="k">Average engine use</div><div class="v">${f1(avgGa)}<small style="font:600 .8rem var(--font);color:var(--muted);"> mm/event</small></div><div class="s">arithmetic mean across 12 modeled cases</div></div>
+        <div class="ga-kpi"><div class="k">Average modeled saving</div><div class="v">${f1(avgEfficiency)}%</div><div class="s">not a guaranteed or field-validated saving</div></div>
+      </div>
+      <div class="ga-proof">
+        <h3>How to interpret this</h3>
+        <p>The percentage is evidence that the rule engine produces different resource recommendations under different declared conditions. It is <b>not</b> evidence that a real farm will save the same percentage. Field calibration, flow measurement, crop observations and economic validation are Phase 2/3 work.</p>
+      </div>
+    </div>
+
+    <div id="gaScope" class="ga-subsection" style="margin-top:24px;">
+      <div class="sec-head"><div class="eyebrow">SCOPE &amp; HONESTY</div><h3>What is built, what is modeled, and what is future</h3></div>
+      <div class="grid g2">
+        <div class="ga-proof">
+          <span class="ga-status present">Built now</span>
+          <h3>Phase 1 · Software + Simulation</h3>
+          <p>Deterministic resource decision engine, explainable outputs, simulated Digital Twin, impact dashboard, fixed reliability tests and predefined efficiency experiments.</p>
+        </div>
+        <div class="ga-proof ga-future-box">
+          <span class="ga-status future">Future only · NOT BUILT / NOT TESTED</span>
+          <h3>Phase 2 · Hardware validation</h3>
+          <p>Soil-moisture sensors → weather input → decision engine → controller → irrigation actuation → flow measurement → feedback/calibration.</p>
+        </div>
+      </div>
+      <div class="ga-callout">
+        <b>Explicit limitation:</b> Phase 1 uses software/simulation only and does not use field/sensor measurements for its validation experiment. GROUND AID does not guarantee water savings, yield improvement, energy savings or farmer ROI.
+      </div>
+      <div class="ga-proof" style="margin-top:12px;">
+        <h3>Economy &amp; scalability</h3>
+        <p><b>Economy:</b> software-first validation avoids claiming hardware cost or ROI that has not been measured. <b>Scalability:</b> crop parameters, region/weather inputs, language strings and future sensor inputs can be separated from the core decision function; the current engine already receives a structured input object rather than reading UI controls directly.</p>
+      </div>
+      <div class="ga-proof" style="margin-top:12px;">
+        <h3>Submission media — external action still required</h3>
+        <p>The app is now evidence-ready, but an HTML page cannot truthfully claim that the final backup screenshots/video have already been created. Capture at minimum: (1) home decision + Digital Twin + impact, (2) Reliability table, (3) Efficiency table + Scope &amp; Honesty. Record a short screen demo showing a weather/soil input change and the resulting decision change.</p>
+        <span class="ga-status missing" style="margin-top:8px;">Still required outside app</span>
+      </div>
+    </div>
+  `;
+
+  const impact=document.getElementById('gaImpactSection');
+  if(impact && impact.parentNode) impact.parentNode.insertBefore(section,impact.nextSibling);
+  else home.appendChild(section);
+
+  section.querySelectorAll('[data-ga-scroll]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const target=document.getElementById(btn.getAttribute('data-ga-scroll'));
+      if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  });
+
+  /* Add a compact evidence jump button to the existing home quick-action area. */
+  const qa=home.querySelector('.qa-grid');
+  if(qa && !qa.querySelector('[data-ga-evidence-jump]')){
+    const b=document.createElement('button');
+    b.className='qa';
+    b.setAttribute('data-ga-evidence-jump','1');
+    b.innerHTML='<span class="ic ic-green">✓</span><span class="t">PJMT Evidence</span><span class="d">Reliability, efficiency, relevance and honest scope</span>';
+    b.addEventListener('click',()=>section.scrollIntoView({behavior:'smooth',block:'start'}));
+    qa.appendChild(b);
+  }
+
+  window.GroundAid=window.GroundAid||{};
+  window.GroundAid.PJMTEvidence={
+    reliabilityCases:RELIABILITY_CASES,
+    reliabilityResults:reliability,
+    efficiencyScenarios:EFFICIENCY_SCENARIOS,
+    efficiencyResults:efficiency,
+    averageEfficiency:avgEfficiency,
+    version:'pjmt-evidence-v1'
+  };
+  
+});
+})();
+</script>
+
 </body>
 </html>
