@@ -4885,6 +4885,11 @@ function decide(input){
     effectiveMoisturePct:+eff.toFixed(1), thresholdPct:t, stageLabel:p.label };
 }
 
+
+// Publish the existing canonical engine for the Digital Twin and locked tests.
+window.GroundAid=window.GroundAid||{};
+window.GroundAid.ResourceDecisionEngine={decide,STAGE_PROFILE,RAIN_TO_SM_FACTOR,version:'phase1-resource-decision-v1'};
+
 })();
 </script>
 
@@ -7021,12 +7026,14 @@ whenReady(function initHomeReorg(){
     `;
     const twinHead = document.createElement('div');
     twinHead.className = 'ga-section-head';
+    twinHead.id = 'gaTwinSectionHead';
     twinHead.innerHTML = `
       <div class="ga-num">04</div>
       <div class="ga-text"><div class="k">Digital twin</div><div class="v">Simulated farm model · reacts live to inputs</div></div>
     `;
     const impHead = document.createElement('div');
     impHead.className = 'ga-section-head';
+    impHead.id = 'gaImpactSectionHead';
     impHead.innerHTML = `
       <div class="ga-num">05</div>
       <div class="ga-text"><div class="k">Impact</div><div class="v">Baseline vs. engine across simulated scenarios</div></div>
@@ -7556,6 +7563,380 @@ ready(function mountPjmtEvidence(){
     version:'pjmt-evidence-v1'
   };
   
+});
+})();
+</script>
+
+
+<!-- ============================================================
+     GROUND AID — CROP LIFECYCLE DIGITAL TWIN (reduced-order model)
+     Additive module: leaves the Phase 1 irrigation engine and tests intact.
+     ============================================================ -->
+<script>
+(function(){
+'use strict';
+function ready(fn){
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',fn,{once:true});
+  else setTimeout(fn,0);
+}
+ready(function mountCropLifecycle(){
+  const home=document.getElementById('page-home');
+  if(!home || document.getElementById('gaLifecycle')) return;
+
+  const crops={
+    wheat:{label:'Wheat',base:0,maturity:1550,days:125,rootMax:1.2,kc:[0.35,1.15,0.35],rue:1.5,hi:0.42,nNeed:120,stages:['Germination','Seedling','Tillering','Stem elongation','Flowering','Grain filling','Physiological maturity','Harvest ready']},
+    rice:{label:'Rice',base:10,maturity:1800,days:135,rootMax:0.6,kc:[1.05,1.2,0.9],rue:1.6,hi:0.45,nNeed:100,stages:['Germination / establishment','Seedling','Tillering','Panicle initiation','Flowering','Grain filling','Physiological maturity','Harvest ready']},
+    maize:{label:'Maize',base:10,maturity:1500,days:115,rootMax:1.5,kc:[0.3,1.2,0.6],rue:2.8,hi:0.48,nNeed:160,stages:['Germination','Seedling','Vegetative growth','Tasseling / silking','Kernel set','Grain filling','Physiological maturity','Harvest ready']},
+    tomato:{label:'Tomato',base:10,maturity:1250,days:105,rootMax:0.8,kc:[0.6,1.15,0.8],rue:1.2,hi:0.55,nNeed:150,stages:['Germination / transplant establishment','Vegetative growth','Flowering','Fruit set','Fruit expansion','Ripening','Maturity','Harvest ready']},
+    potato:{label:'Potato',base:4,maturity:1100,days:100,rootMax:0.6,kc:[0.5,1.15,0.75],rue:1.3,hi:0.65,nNeed:140,stages:['Sprout emergence','Leaf development','Stolon formation','Tuber initiation','Tuber bulking','Canopy senescence','Maturity','Harvest ready']},
+    chickpea:{label:'Chickpea',base:5,maturity:1150,days:110,rootMax:1.0,kc:[0.4,1.0,0.35],rue:1.3,hi:0.35,nNeed:30,stages:['Emergence','Vegetative growth','Branching','Flowering','Pod formation','Seed filling','Physiological maturity','Harvest ready']}
+  };
+  const soils={
+    sand:{label:'Sand',fc:0.12,pwp:0.05,runoff:0.03,drain:0.55},
+    sandyloam:{label:'Sandy loam',fc:0.23,pwp:0.10,runoff:0.06,drain:0.35},
+    loam:{label:'Loam',fc:0.30,pwp:0.13,runoff:0.10,drain:0.22},
+    clayloam:{label:'Clay loam',fc:0.36,pwp:0.20,runoff:0.18,drain:0.12},
+    clay:{label:'Clay',fc:0.40,pwp:0.27,runoff:0.30,drain:0.08}
+  };
+  const style=document.createElement('style');
+  style.textContent=`
+  #gaLifecycle{margin:18px 0 24px;scroll-margin-top:130px}
+  #gaLifecycle .ga-lc-grid{display:grid;grid-template-columns:1fr;gap:14px}
+  @media(min-width:850px){#gaLifecycle .ga-lc-grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+  #gaLifecycle .ga-lc-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  #gaLifecycle .ga-lc-field{min-width:0}
+  #gaLifecycle label{display:block;font-size:.78rem;font-weight:700;color:var(--ink-2);margin-bottom:5px}
+  #gaLifecycle input,#gaLifecycle select{width:100%;min-width:0;padding:10px 11px;border:1.5px solid var(--line-2);border-radius:9px;background:var(--surface-2);color:var(--ink)}
+  #gaLifecycle .ga-lc-help{font-size:.72rem;color:var(--muted);margin-top:4px;line-height:1.45}
+  #gaLifecycle .ga-lc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  #gaLifecycle .ga-lc-actions .btn{white-space:normal}
+  #gaLifecycle .ga-lc-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  @media(min-width:600px){#gaLifecycle .ga-lc-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  #gaLifecycle .ga-lc-kpi{border:1px solid var(--line);border-radius:10px;padding:11px;background:var(--surface-2);min-width:0}
+  #gaLifecycle .ga-lc-kpi .k{font-size:.68rem;color:var(--muted);font-weight:700}
+  #gaLifecycle .ga-lc-kpi .v{font-size:1.1rem;font-weight:800;color:var(--ink);margin-top:4px;overflow-wrap:anywhere}
+  #gaLifecycle .ga-lc-status{padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:.8rem;color:var(--ink-2);line-height:1.5}
+  #gaLifecycle .ga-lc-stagebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:12px 0}
+  #gaLifecycle .ga-lc-stage{padding:8px 5px;border:1px solid var(--line);border-radius:7px;text-align:center;font-size:.65rem;color:var(--muted);overflow-wrap:anywhere}
+  #gaLifecycle .ga-lc-stage.on{background:var(--green-soft);border-color:var(--green);color:var(--ink);font-weight:800}
+  #gaLifecycle .ga-lc-chart{width:100%;height:auto;display:block;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+  #gaLifecycle .ga-lc-table{width:100%;min-width:660px;border-collapse:collapse;font-size:.75rem}
+  #gaLifecycle .ga-lc-table th,#gaLifecycle .ga-lc-table td{padding:8px;border-bottom:1px solid var(--line);text-align:right}
+  #gaLifecycle .ga-lc-table th:first-child,#gaLifecycle .ga-lc-table td:first-child{text-align:left}
+  #gaLifecycle .ga-lc-note{font-size:.76rem;color:var(--ink-2);line-height:1.55}
+  #gaLifecycle .ga-lc-warning{border-left:4px solid var(--amber);padding:10px 12px;background:var(--amber-soft);border-radius:0 8px 8px 0;font-size:.76rem;color:var(--ink);line-height:1.5}
+  #gaLifecycle .ga-lc-range{display:flex;align-items:center;gap:10px}
+  #gaLifecycle input[type=range]{padding:0}
+  #gaLifecycle .ga-lc-range output{font-family:var(--font-mono);font-size:.8rem;min-width:72px;text-align:right}
+  #gaLifecycle .ga-lc-farm-scene{width:100%;display:block;border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:0 0 12px}
+  #gaLifecycle .ga-lc-scene-legend{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;font-size:.72rem;color:var(--ink-2)}
+  #gaLifecycle .ga-lc-scene-legend span{padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
+  #gaLifecycle .ga-lc-result-line{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+  #gaLifecycle .ga-lc-result-pill{padding:6px 9px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font-size:.74rem;color:var(--ink-2)}
+  @media(max-width:480px){#gaLifecycle .ga-lc-form{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+
+  const section=document.createElement('section');
+  section.className='module';
+  section.id='gaLifecycle';
+  section.innerHTML=`
+    <div class="sec-head">
+      <div class="eyebrow">DIGITAL TWIN · CROP LIFECYCLE</div>
+      <h2>Full Crop-Lifecycle Simulator</h2>
+      <p>Set a crop and field scenario, then inspect the simulated crop day by day from sowing to maturity. This extends—not replaces—the existing wheat irrigation decision engine.</p>
+    </div>
+    <div class="ga-lc-warning"><b>Scientific scope:</b> this is a transparent reduced-order educational model, not a validated implementation of AquaCrop, DSSAT, or APSIM. Crop parameters are provisional defaults for scenario exploration. No field measurements are implied, and yield is a model estimate rather than a guarantee.</div>
+    <div class="ga-lc-grid" style="margin-top:14px">
+      <div class="card flat">
+        <h3 style="margin-bottom:12px">1 · Farm and crop inputs</h3>
+        <div class="ga-lc-form">
+          <div class="ga-lc-field"><label for="gaLcCrop">Crop</label><select id="gaLcCrop"><option value="wheat">Wheat</option><option value="rice">Rice</option><option value="maize">Maize</option><option value="tomato">Tomato</option><option value="potato">Potato</option><option value="chickpea">Chickpea</option></select></div>
+          <div class="ga-lc-field"><label for="gaLcVariety">Variety / cultivar (optional)</label><input id="gaLcVariety" placeholder="Unknown / local cultivar"></div>
+          <div class="ga-lc-field"><label for="gaLcDate">Sowing / transplant date</label><input id="gaLcDate" type="date"></div>
+          <div class="ga-lc-field"><label for="gaLcArea">Field area (hectares)</label><input id="gaLcArea" type="number" min="0.01" max="100000" step="0.01" value="1"></div>
+          <div class="ga-lc-field"><label for="gaLcSoil">Soil texture</label><select id="gaLcSoil"><option value="sand">Sand</option><option value="sandyloam" selected>Sandy loam</option><option value="loam">Loam</option><option value="clayloam">Clay loam</option><option value="clay">Clay</option></select></div>
+          <div class="ga-lc-field"><label for="gaLcMoisture">Initial available water (%)</label><input id="gaLcMoisture" type="number" min="0" max="100" value="65"><div class="ga-lc-help">Percent of estimated plant-available root-zone water capacity, not volumetric moisture.</div></div>
+          <div class="ga-lc-field"><label for="gaLcTmin">Typical daily minimum temperature (°C)</label><input id="gaLcTmin" type="number" min="-10" max="40" step="0.5" value="18"></div>
+          <div class="ga-lc-field"><label for="gaLcTmax">Typical daily maximum temperature (°C)</label><input id="gaLcTmax" type="number" min="-5" max="55" step="0.5" value="30"></div>
+          <div class="ga-lc-field"><label for="gaLcRain">Mean daily rainfall scenario (mm/day)</label><input id="gaLcRain" type="number" min="0" max="100" step="0.5" value="2"><div class="ga-lc-help">Synthetic seasonal scenario input; not a weather forecast.</div></div>
+          <div class="ga-lc-field"><label for="gaLcRad">Mean solar radiation (MJ/m²/day)</label><input id="gaLcRad" type="number" min="2" max="35" step="0.5" value="18"></div>
+          <div class="ga-lc-field"><label for="gaLcIrrigation">Water management</label><select id="gaLcIrrigation"><option value="auto">Rule-based supplemental irrigation</option><option value="rainfed">Rainfed (no irrigation)</option></select></div>
+          <div class="ga-lc-field"><label for="gaLcFertN">Planned nitrogen applied (kg N/ha)</label><input id="gaLcFertN" type="number" min="0" max="500" value="80"><div class="ga-lc-help">Recorded in the report only; nutrient uptake and response are not calibrated in this version.</div></div>
+          <div class="ga-lc-field"><label for="gaLcMulch">Mulch cover (%)</label><input id="gaLcMulch" type="number" min="0" max="100" value="0"></div>
+          <div class="ga-lc-field"><label for="gaLcSpeed">Playback speed</label><select id="gaLcSpeed"><option value="1000">1 day / second</option><option value="250">4 days / second</option><option value="50">20 days / second</option></select></div>
+        </div>
+        <div class="ga-lc-actions">
+          <button class="btn btn-primary" id="gaLcStart" type="button">Start / Recalculate crop</button>
+          <button class="btn btn-ghost" id="gaLcNext" type="button">Advance 1 day</button>
+          <button class="btn btn-ghost" id="gaLcPlay" type="button">▶ Play</button>
+          <button class="btn btn-ghost" id="gaLcPause" type="button">Ⅱ Pause</button>
+          <button class="btn btn-ghost" id="gaLcCompare" type="button">Compare rainfed vs irrigated</button>
+          <button class="btn btn-ghost" id="gaLcSave" type="button">Save scenario</button>
+          <button class="btn btn-ghost" id="gaLcLoad" type="button">Load scenario</button>
+          <button class="btn btn-ghost" id="gaLcReset" type="button">Reset</button>
+        </div>
+      </div>
+      <div class="card flat">
+        <h3 style="margin-bottom:12px">2 · Simulated farm result</h3>
+        <div id="gaLcFarmVisual"><div class="ga-lc-status">Start a simulation to render the crop and field response.</div></div>
+        <div class="ga-lc-result-line" id="gaLcFarmPills"></div>
+        <div class="ga-lc-kpis">
+          <div class="ga-lc-kpi"><div class="k">Day after sowing</div><div class="v" id="gaLcDay">—</div></div>
+          <div class="ga-lc-kpi"><div class="k">Crop stage</div><div class="v" id="gaLcStage">—</div></div>
+          <div class="ga-lc-kpi"><div class="k">Root-zone water</div><div class="v" id="gaLcWater">—</div></div>
+          <div class="ga-lc-kpi"><div class="k">Biomass estimate</div><div class="v" id="gaLcBiomass">—</div></div>
+        </div>
+        <div class="ga-lc-stagebar" id="gaLcStagebar" aria-label="Crop lifecycle stages"></div>
+        <div class="ga-lc-status" id="gaLcStatus" aria-live="polite">Enter the field conditions and start a simulation.</div>
+        <div class="ga-lc-range" style="margin-top:12px"><label for="gaLcInspect" style="margin:0;white-space:nowrap">Inspect day</label><input id="gaLcInspect" type="range" min="0" max="1" value="0" disabled><output id="gaLcInspectOut">—</output></div>
+        <p class="ga-lc-help">Moving the day selector inspects the recorded daily state; it does not alter or rerun the model.</p>
+      </div>
+    </div>
+    <div class="card flat" style="margin-top:14px">
+      <h3 style="margin-bottom:10px">3 · Daily model outputs</h3>
+      <div id="gaLcChartWrap"><p class="ga-lc-note">Start a simulation to generate charts from calculated daily outputs.</p></div>
+      <div class="tbl-wrap" style="margin-top:12px;max-height:360px;overflow:auto"><table class="ga-lc-table"><thead><tr><th>Day / date</th><th>Stage</th><th>Rain (mm)</th><th>Irrigation (mm)</th><th>ETa (mm)</th><th>Root water (mm)</th><th>Stress (0–1)</th><th>Biomass (kg/ha)</th></tr></thead><tbody id="gaLcRows"><tr><td colspan="8" style="text-align:left">No simulation yet.</td></tr></tbody></table></div>
+    </div>
+    <div class="card flat" style="margin-top:14px">
+      <h3 style="margin-bottom:10px">4 · Harvest report</h3>
+      <div class="ga-lc-kpis" id="gaLcReport"><div class="ga-lc-status">Run the lifecycle to see total water use, stress exposure, and modelled harvest estimates.</div></div>
+      <p class="ga-lc-note" style="margin-top:10px">Water productivity is defined here as modelled harvestable-yield proxy (kg/ha) divided by actual crop evapotranspiration (m³/ha equivalent: 1 mm = 10 m³/ha). It is a scenario metric, not a measured field result.</p><div id="gaLcCompareResult" class="ga-lc-status" style="margin-top:10px">Use “Compare rainfed vs irrigated” to compare two runs under the same provisional weather and crop assumptions.</div>
+    </div>
+    <details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">Model equations, assumptions and limitations</summary>
+      <div class="ga-lc-note" style="padding:12px 2px">
+        <p><b>Thermal time:</b> daily GDD = max(0, mean temperature − crop base temperature). Stage transitions use fractions of the provisional crop maturity GDD.</p>
+        <p style="margin-top:7px"><b>Reference ET:</b> Hargreaves-style estimate using daily minimum/maximum temperature and estimated extraterrestrial radiation; it is not FAO-56 Penman–Monteith and does not use humidity or wind.</p>
+        <p style="margin-top:7px"><b>Crop ET:</b> ETc = ETo × stage-dependent Kc. Actual ET is reduced by root-zone water stress. The root-zone bucket tracks rainfall, irrigation, runoff, ET and drainage, with storage bounded by estimated field capacity and wilting point.</p>
+        <p style="margin-top:7px"><b>Biomass:</b> radiation-use-efficiency proxy × intercepted radiation × water-stress factor. Harvestable yield is biomass multiplied by a provisional harvest-index parameter and a thermal maturity fraction.</p>
+        <p style="margin-top:7px"><b>Not yet modelled:</b> cultivar calibration, nutrient uptake/limitations, pests and diseases, salinity, waterlogging injury, detailed runoff/infiltration physics, lodging, pollination failure, cultivar-specific photoperiod, economics, and validated uncertainty intervals. Extreme heat/cold damage is not separately calibrated.</p>
+        <p style="margin-top:7px"><b>Parameter status:</b> values are illustrative provisional defaults in the embedded registry, not sourced or calibrated for a specific location. Do not use these yield estimates as agronomic guarantees or sole operational advice.</p>
+      </div>
+    </details>
+  `;
+  const impact=document.getElementById('gaImpactSection');
+  const twin=document.getElementById('gaTwinSection');
+  // Unified presentation: lifecycle calculations drive the simulated farm scene.
+  if(twin && twin.parentNode) twin.parentNode.insertBefore(section,twin);
+  else if(impact && impact.parentNode) impact.parentNode.insertBefore(section,impact);
+  else home.appendChild(section);
+  // Remove the duplicate standalone farm controls and the user-selected uploaded
+  // Impact dashboard / PJMT evidence block from the visible app.
+  if(twin) twin.remove();
+  if(impact) impact.remove();
+  const evidence=document.getElementById('gaPjmtEvidence');
+  if(evidence) evidence.remove();
+  document.getElementById('gaTwinSectionHead')?.remove();
+  document.getElementById('gaImpactSectionHead')?.remove();
+
+  const $=id=>section.querySelector('#'+id);
+  const ids=['Crop','Variety','Date','Area','Soil','Moisture','Tmin','Tmax','Rain','Rad','Irrigation','FertN','Mulch','Speed'];
+  const fields={};
+  ids.forEach(k=>fields[k.toLowerCase()]=$('gaLc'+k));
+  const now=new Date();
+  fields.date.value=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  let series=[],cursor=0,timer=null,config=null;
+  const fmt=(n,d=1)=>Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d}):'—';
+  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  const datePlus=(iso,days)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)};
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function readConfig(){
+    const c=crops[fields.crop.value],soil=soils[fields.soil.value];
+    const n=id=>Number(fields[id].value);
+    const vals={area:n('area'),moisture:n('moisture'),tmin:n('tmin'),tmax:n('tmax'),rain:n('rain'),rad:n('rad'),fertN:n('fertn'),mulch:n('mulch')};
+    if(!fields.date.value) throw Error('Choose a sowing or transplant date.');
+    if(!Number.isFinite(vals.area)||vals.area<=0||vals.area>100000)throw Error('Field area must be greater than zero and at most 100,000 ha.');
+    if(vals.tmax<=vals.tmin)throw Error('Maximum temperature must be higher than minimum temperature.');
+    if(vals.moisture<0||vals.moisture>100||vals.rain<0||vals.rad<2||vals.rad>35||vals.mulch<0||vals.mulch>100||vals.fertN<0)throw Error('Check moisture, rainfall, radiation, mulch and nitrogen inputs.');
+    return {cropId:fields.crop.value,crop:c,soil,area:vals.area,moisture:vals.moisture,tmin:vals.tmin,tmax:vals.tmax,rain:vals.rain,rad:vals.rad,fertN:vals.fertN,mulch:vals.mulch,waterMode:fields.irrigation.value,date:fields.date.value,variety:fields.variety.value.trim(),speed:Number(fields.speed.value)};
+  }
+  function stageAt(frac,c){
+    const boundaries=[0.04,0.12,0.28,0.48,0.62,0.82,0.96,1.01];
+    const idx=boundaries.findIndex(b=>frac<b);
+    return Math.max(0,Math.min(c.stages.length-1,idx<0?c.stages.length-1:idx));
+  }
+  function extraterrestrialRadiation(date,lat=22){
+    const d=new Date(date+'T12:00:00'),j=Math.floor((d-new Date(d.getFullYear(),0,0))/86400000);
+    const dr=1+0.033*Math.cos(2*Math.PI*j/365),dec=0.409*Math.sin(2*Math.PI*j/365-1.39),phi=lat*Math.PI/180;
+    const ws=Math.acos(clamp(-Math.tan(phi)*Math.tan(dec),-1,1));
+    return (24*60/Math.PI)*0.0820*dr*(ws*Math.sin(phi)*Math.sin(dec)+Math.cos(phi)*Math.cos(dec)*Math.sin(ws));
+  }
+  function simulate(cfg,waterMode=cfg.waterMode){
+    const c=cfg.crop,soil=cfg.soil,days=Math.ceil(c.maturity/Math.max(1,(cfg.tmin+cfg.tmax)/2-c.base)*1.12);
+    const maxDays= Math.min(240,Math.max(c.days+35,days));
+    const out=[];let gdd=0,root=0.08,storage=0,biomass=0,totalRain=0,totalIrr=0,totalET=0,totalRunoff=0,totalDrain=0,totalRootExpansionWater=0,stressDays=0,peakStress=0,failed=false;
+    for(let d=0;d<maxDays;d++){
+      const date=datePlus(cfg.date,d),tmean=(cfg.tmin+cfg.tmax)/2;
+      const seasonal=Math.sin((d/maxDays)*Math.PI*2-0.8)*1.8;
+      const tmin=cfg.tmin+seasonal,tmax=cfg.tmax+seasonal,tm=(tmin+tmax)/2;
+      const dayGdd=Math.max(0,tm-c.base);gdd+=dayGdd;
+      const frac=clamp(gdd/c.maturity,0,1),stage=stageAt(frac,c);
+      const oldRoot=root;
+      const rootTarget=0.08+(c.rootMax-0.08)*clamp(frac/0.75,0,1);root=Math.max(root,rootTarget);
+      const fc=soil.fc*root*1000,pwp=soil.pwp*root*1000,awc=Math.max(1,fc-pwp);
+      const rootExpansionWater=d===0?0:Math.max(0,root-oldRoot)*1000*(soil.pwp+(soil.fc-soil.pwp)*cfg.moisture/100);
+      if(d===0)storage=pwp+awc*cfg.moisture/100;
+      else storage+=rootExpansionWater;
+      totalRootExpansionWater+=rootExpansionWater;
+      const rainPattern=Math.max(0,0.35+0.65*Math.sin((d+3)*1.618)+0.25*Math.sin((d+11)*0.47));
+      const rain=cfg.rain===0?0:cfg.rain*rainPattern*1.55;
+      const kc=frac<0.2?c.kc[0]+(c.kc[1]-c.kc[0])*(frac/0.2):frac<0.75?c.kc[1]:c.kc[1]-(c.kc[1]-c.kc[2])*clamp((frac-0.75)/0.25,0,1);
+      const ra=extraterrestrialRadiation(date);
+      const eto=clamp(0.0023*(tm+17.8)*Math.sqrt(Math.max(0,tmax-tmin))*ra,0,12);
+      const etc=eto*kc;
+      const mulchFactor=1-0.35*(cfg.mulch/100);
+      const incoming=rain;
+      const runoff=incoming*soil.runoff;
+      let infiltration=incoming-runoff;
+      const irrigation=waterMode==='auto'&&storage-pwp<awc*0.60?Math.min(35,Math.max(0,(fc-storage)*0.85)):0;
+      totalRain+=rain;totalIrr+=irrigation;
+      infiltration+=irrigation;
+      let preET=storage+infiltration;
+      let drainage=Math.max(0,preET-fc)*soil.drain;
+      preET-=drainage;
+      storage=clamp(preET,pwp,fc);
+      const depletion=clamp((fc-storage)/awc,0,1);
+      const waterStress=clamp(1-Math.max(0,depletion-0.35)/0.45,0,1);
+      const eta=Math.min(etc*waterStress,Math.max(0,storage-pwp));
+      storage=clamp(storage-eta*mulchFactor,pwp,fc);
+      const stress=1-waterStress;
+      if(stress>0.25)stressDays++;
+      peakStress=Math.max(peakStress,stress);
+      totalET+=eta*mulchFactor;totalRunoff+=runoff;totalDrain+=drainage;
+      const cover=clamp(frac*1.25,0,0.96);
+      const intercepted=cfg.rad*0.48*(1-Math.exp(-0.65*cover));
+      const dailyBiomass=Math.max(0,intercepted*c.rue*waterStress*10); // kg/ha/day
+      biomass+=dailyBiomass;
+      if(storage<=pwp+0.01&&d>7&&frac<0.9)failed=true;
+      out.push({day:d,date,gdd,frac,stage,root,fc,pwp,awc,storage,rain,irrigation,eto,etc,eta:eta*mulchFactor,stress,biomass,totalRain,totalIrr,totalET,totalRunoff,totalDrain,rootExpansionWater,tmin,tmax,waterStress,failed});
+      if(frac>=1)break;
+    }
+    const last=out[out.length-1];
+    const maturityReached=!!last&&last.frac>=1;
+    const harvestIndex=c.hi;
+    const yieldProxy=biomass*harvestIndex*(maturityReached?1:clamp(last.frac,0,1));
+    return {cfg,waterMode,days:out.length,out,summary:{maturityReached,failed:!!last?.failed,totalRain,totalIrr,totalET,totalRunoff,totalDrain,totalRootExpansionWater,biomass,yieldProxy,waterProductivity:totalET>0?yieldProxy/(totalET*10):0,stressDays,peakStress,harvestDate:last?.date||cfg.date,lastFrac:last?.frac||0}};
+  }
+  function chart(data){
+    if(!data.length)return '<p class="ga-lc-note">No data yet.</p>';
+    const w=760,h=230,p=34, maxDay=Math.max(1,data.length-1);
+    const maxWater=Math.max(20,...data.map(x=>x.storage)),maxBio=Math.max(1,...data.map(x=>x.biomass));
+    const path=(key,max)=>data.map((r,i)=>(i?'L':'M')+(p+i/maxDay*(w-p*2)).toFixed(1)+','+(h-p-(r[key]/max)*(h-p*2)).toFixed(1)).join(' ');
+    const grid=[0,.25,.5,.75,1].map(t=>`<line x1="${p}" y1="${p+t*(h-p*2)}" x2="${w-p}" y2="${p+t*(h-p*2)}" stroke="var(--line)" stroke-width="1"/>`).join('');
+    const tickText=`<text x="${p}" y="${h-7}" fill="var(--muted)" font-size="11">Day 0</text><text x="${w-p}" y="${h-7}" text-anchor="end" fill="var(--muted)" font-size="11">Day ${data.length-1}</text>`;
+    return `<svg class="ga-lc-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Calculated daily root-zone water storage and biomass curves">${grid}<path d="${path('storage',maxWater)}" fill="none" stroke="#2376b7" stroke-width="2.5"/><path d="${path('biomass',maxBio)}" fill="none" stroke="#2d8a57" stroke-width="2.5"/>${tickText}<text x="${p}" y="17" fill="var(--ink)" font-size="12" font-weight="700">Daily simulated outputs</text><text x="${w-p}" y="17" text-anchor="end" fill="var(--muted)" font-size="10">Blue: water (scaled) · Green: biomass (scaled)</text></svg><p class="ga-lc-help">Each curve is scaled to its own maximum for visual comparison; the lines do not share a vertical axis.</p>`;
+  }
+  function farmScene(r){
+    const crop=config.crop, label=crop.label;
+    const progress=clamp(r.frac,0,1), stress=clamp(r.stress,0,1);
+    const plantCount=7, baseY=150;
+    const plants=Array.from({length:plantCount},(_,i)=>{
+      const x=70+i*82;
+      const variation=0.82+(i%3)*0.09;
+      const h=(18+progress*66)*variation*(0.68+0.32*r.waterStress);
+      const top=baseY-h;
+      const leafColor=stress>.55?'#9b9a4d':stress>.25?'#73994b':'#2f8d52';
+      const leaves=progress<.12?`<ellipse cx="${x}" cy="${baseY-7}" rx="5" ry="9" fill="${leafColor}" transform="rotate(-32 ${x} ${baseY-7})"/>`:
+        `<path d="M ${x} ${baseY-5} Q ${x-17} ${baseY-18} ${x-22} ${baseY-27} Q ${x-5} ${baseY-27} ${x} ${baseY-5} Z" fill="${leafColor}"/>
+         <path d="M ${x} ${baseY-12} Q ${x+16} ${baseY-25} ${x+20} ${baseY-34} Q ${x+4} ${baseY-33} ${x} ${baseY-12} Z" fill="${leafColor}"/>
+         <path d="M ${x} ${baseY-25} Q ${x-12} ${baseY-38} ${x-13} ${baseY-46} Q ${x-2} ${baseY-42} ${x} ${baseY-25} Z" fill="${leafColor}"/>`;
+      const fruit=(crop.label==='Tomato'&&progress>.55)?`<circle cx="${x-7}" cy="${baseY-30}" r="5" fill="#d94d3d"/><circle cx="${x+9}" cy="${baseY-22}" r="5" fill="#d94d3d"/>`:
+        (crop.label==='Maize'&&progress>.58)?`<ellipse cx="${x+7}" cy="${baseY-35}" rx="4" ry="12" fill="#e3bf4f"/>`:'';
+      return `<g><path d="M ${x} ${baseY} Q ${x-2} ${baseY-16} ${x} ${top}" stroke="#397c3d" stroke-width="3" fill="none" stroke-linecap="round"/>${leaves}${fruit}</g>`;
+    }).join('');
+    const wet=clamp(r.storage/Math.max(1,r.fc),0,1);
+    const soilFill=wet>.72?'#70472d':wet>.42?'#8a5a38':'#a47750';
+    const rain=r.rain>0?`<g stroke="#3b9bd8" stroke-width="2" stroke-linecap="round" opacity=".9">${[90,180,270,360,450,540].map((x,i)=>`<path d="M ${x} 38 l -6 12"/>`).join('')}</g>`:'';
+    const irrigation=r.irrigation>0?`<g stroke="#3b9bd8" stroke-width="3" stroke-linecap="round"><path d="M 30 148 Q 90 130 150 148"/><path d="M 235 148 Q 295 130 355 148"/><path d="M 440 148 Q 500 130 560 148"/></g>`:'';
+    const sky=`<rect x="0" y="0" width="640" height="150" rx="10" fill="#dff1fb"/><circle cx="565" cy="35" r="18" fill="#f7c957"/><path d="M 0 120 Q 120 85 240 115 T 480 105 T 640 112 L640 160 L0 160Z" fill="#b7d8a5"/>`;
+    const roots=plants?Array.from({length:plantCount},(_,i)=>{const x=70+i*82;return `<path d="M ${x} 151 q -4 9 -7 ${Math.max(8,r.root*19)} M ${x} 151 q 5 8 8 ${Math.max(8,r.root*17)}" stroke="#e0c49b" stroke-width="1.5" fill="none" opacity=".9"/>`;}).join(''):'';
+    const status=stress>.55?'High water stress':stress>.25?'Moderate water stress':'Low water stress';
+    return `<svg class="ga-lc-farm-scene" viewBox="0 0 640 235" role="img" aria-label="${esc(label)} farm scene at day ${r.day}, ${esc(crop.stages[r.stage])}, ${status}">
+      ${sky}${rain}
+      <rect x="0" y="150" width="640" height="85" fill="${soilFill}"/>
+      <path d="M0 151 Q160 146 320 151 T640 150" stroke="#4b8b42" stroke-width="4" fill="none"/>
+      ${irrigation}${plants}${roots}
+      <rect x="12" y="10" width="270" height="43" rx="8" fill="#ffffff" fill-opacity=".88"/>
+      <text x="24" y="28" fill="#203329" font-size="12" font-weight="800">${esc(label)} · Day ${r.day}</text>
+      <text x="24" y="43" fill="#334b3a" font-size="10">${esc(crop.stages[r.stage])} · ${Math.round(progress*100)}% thermal progress</text>
+      <rect x="12" y="193" width="616" height="29" rx="7" fill="#1d2a23" fill-opacity=".78"/>
+      <text x="24" y="211" fill="#ffffff" font-size="11">Root-zone water ${fmt(r.storage)} mm · Root depth ${fmt(r.root,2)} m · ${status}</text>
+    </svg>`;
+  }
+  function render(){
+    if(!series.length)return;
+    const r=series[cursor],c=config.crop;
+    $('gaLcDay').textContent=r.day;
+    $('gaLcStage').textContent=c.stages[r.stage];
+    $('gaLcWater').textContent=fmt(r.storage)+' mm';
+    $('gaLcBiomass').textContent=Math.round(r.biomass).toLocaleString()+' kg/ha';
+    $('gaLcFarmVisual').innerHTML=farmScene(r);
+    $('gaLcFarmPills').innerHTML=[
+      `Rain today: <b>${fmt(r.rain)} mm</b>`,
+      `Irrigation today: <b>${fmt(r.irrigation)} mm</b>`,
+      `Actual ET: <b>${fmt(r.eta)} mm</b>`,
+      `Water-stress factor: <b>${fmt(r.waterStress*100,0)}%</b>`
+    ].map(t=>`<span class="ga-lc-result-pill">${t}</span>`).join('');
+    $('gaLcStagebar').innerHTML=c.stages.map((s,i)=>`<div class="ga-lc-stage ${i===r.stage?'on':''}">${i+1}. ${esc(s)}</div>`).join('');
+    $('gaLcStatus').innerHTML=`<b>${esc(r.date)}</b> · ${fmt(r.tmin)}–${fmt(r.tmax)} °C · GDD accumulated ${fmt(r.gdd,0)}.<br>Rain ${fmt(r.rain)} mm; irrigation ${fmt(r.irrigation)} mm; estimated ETo ${fmt(r.eto)} mm; ETa ${fmt(r.eta)} mm. Root depth proxy ${fmt(r.root,2)} m. Water-stress factor ${fmt(r.waterStress*100,0)}% of unstressed conditions.${r.failed?' <b>Severe water limitation flag:</b> root-zone storage reached the wilting-point boundary in this simplified model.':''}`;
+    $('gaLcInspect').max=String(Math.max(1,series.length-1));$('gaLcInspect').value=String(cursor);$('gaLcInspect').disabled=false;$('gaLcInspectOut').textContent=`${cursor} / ${series.length-1}`;
+    $('gaLcRows').innerHTML=series.filter((x,i)=>i===0||i===series.length-1||i%Math.max(1,Math.floor(series.length/60))===0||i===cursor).map(x=>`<tr style="${x.day===cursor?'background:var(--green-soft)':''}"><td>${x.day} · ${esc(x.date)}</td><td>${esc(c.stages[x.stage])}</td><td>${fmt(x.rain)}</td><td>${fmt(x.irrigation)}</td><td>${fmt(x.eta)}</td><td>${fmt(x.storage)}</td><td>${fmt(x.stress,2)}</td><td>${Math.round(x.biomass).toLocaleString()}</td></tr>`).join('');
+    $('gaLcChartWrap').innerHTML=chart(series);
+    const sum=simulate(config,config.waterMode).summary;
+    $('gaLcReport').innerHTML=[
+      ['Lifecycle',sum.maturityReached?`${series.length-1} days`:`Not mature (${Math.round(sum.lastFrac*100)}% thermal progress)`],
+      ['Total rainfall',`${fmt(sum.totalRain)} mm`],
+      ['Total irrigation',`${fmt(sum.totalIrr)} mm`],
+      ['Season ETa',`${fmt(sum.totalET)} mm`],
+      ['Runoff / drainage',`${fmt(sum.totalRunoff)} / ${fmt(sum.totalDrain)} mm`],
+      ['Water exposed by root growth',`${fmt(sum.totalRootExpansionWater)} mm (internal root-zone term)`],
+      ['Biomass proxy',`${Math.round(sum.biomass).toLocaleString()} kg/ha`],
+      ['Harvestable-yield proxy',`${Math.round(sum.yieldProxy).toLocaleString()} kg/ha`],
+      ['Field production proxy',`${Math.round(sum.yieldProxy*config.area).toLocaleString()} kg`],
+      ['Water productivity',`${fmt(sum.waterProductivity,3)} kg/m³ ETa`],
+      ['Days with stress > 0.25',`${sum.stressDays} days`],
+      ['Peak water stress',`${fmt(sum.peakStress*100,0)}%`],
+      ['Nitrogen input recorded',`${fmt(config.fertN)} kg N/ha`]
+    ].map(([k,v])=>`<div class="ga-lc-kpi"><div class="k">${esc(k)}</div><div class="v" style="font-size:.98rem">${esc(v)}</div></div>`).join('');
+  }
+  function stop(){if(timer!==null){clearInterval(timer);timer=null;}}
+  function run(){
+    stop();
+    try{
+      config=readConfig();
+      const result=simulate(config);
+      series=result.out;cursor=0;
+      $('gaLcStatus').setAttribute('data-run','true');
+      if(!series.length)throw Error('No daily records were generated.');
+      render();
+      if(!result.summary.maturityReached)$('gaLcStatus').innerHTML+='<br><b>Model horizon reached before maturity.</b> Review crop thermal parameters and climate inputs.';
+      if(result.summary.failed)$('gaLcStatus').innerHTML+='<br><b>Note:</b> a severe-water-limitation flag occurred; this reduced model does not calculate a calibrated crop-death probability.';
+    }catch(e){$('gaLcStatus').textContent='Input / simulation error: '+e.message;}
+  }
+  $('gaLcStart').addEventListener('click',run);
+  $('gaLcCompare').addEventListener('click',()=>{try{const cfg=readConfig();const rainfed=simulate(cfg,'rainfed').summary,irrigated=simulate(cfg,'auto').summary;const yieldDiff=irrigated.yieldProxy-rainfed.yieldProxy;const waterDiff=irrigated.totalIrr-rainfed.totalIrr;$('gaLcCompareResult').innerHTML=`<b>Scenario comparison · same provisional model inputs</b><br>Rainfed yield proxy: ${Math.round(rainfed.yieldProxy).toLocaleString()} kg/ha; supplemental-irrigation yield proxy: ${Math.round(irrigated.yieldProxy).toLocaleString()} kg/ha.<br>Difference: ${yieldDiff>=0?'+':''}${Math.round(yieldDiff).toLocaleString()} kg/ha; irrigation applied in the irrigated scenario: ${fmt(waterDiff)} mm.<br><span class="ga-lc-help">This is a modelled scenario contrast, not evidence that irrigation will cause this yield difference in the real field.</span>`;}catch(e){$('gaLcCompareResult').textContent='Could not compare scenarios: '+e.message;}});
+  $('gaLcNext').addEventListener('click',()=>{stop();if(!series.length)run();else{cursor=Math.min(series.length-1,cursor+1);render();}});
+  $('gaLcPlay').addEventListener('click',()=>{if(!series.length)run();if(!series.length)return;stop();timer=setInterval(()=>{if(cursor>=series.length-1){stop();return;}cursor++;render();},config.speed);});
+  $('gaLcPause').addEventListener('click',stop);
+  $('gaLcInspect').addEventListener('input',()=>{if(series.length){cursor=Number($('gaLcInspect').value)||0;render();}});
+  $('gaLcSave').addEventListener('click',()=>{
+    try{const cfg=readConfig();localStorage.setItem('groundAidCropLifecycleScenarioV1',JSON.stringify({savedAt:new Date().toISOString(),inputs:{crop:fields.crop.value,variety:fields.variety.value,date:fields.date.value,area:fields.area.value,soil:fields.soil.value,moisture:fields.moisture.value,tmin:fields.tmin.value,tmax:fields.tmax.value,rain:fields.rain.value,rad:fields.rad.value,irrigation:fields.irrigation.value,fertn:fields.fertn.value,mulch:fields.mulch.value,speed:fields.speed.value}}));$('gaLcStatus').textContent='Scenario inputs saved in this browser only (localStorage).';}catch(e){$('gaLcStatus').textContent='Could not save scenario: '+e.message;}
+  });
+  $('gaLcLoad').addEventListener('click',()=>{
+    try{const saved=JSON.parse(localStorage.getItem('groundAidCropLifecycleScenarioV1')||'null');if(!saved||!saved.inputs)throw Error('No saved scenario was found in this browser.');const map={crop:'crop',variety:'variety',date:'date',area:'area',soil:'soil',moisture:'moisture',tmin:'tmin',tmax:'tmax',rain:'rain',rad:'rad',irrigation:'irrigation',fertn:'fertn',mulch:'mulch',speed:'speed'};Object.keys(map).forEach(k=>{if(saved.inputs[k]!==undefined)fields[k].value=saved.inputs[k];});run();}catch(e){$('gaLcStatus').textContent='Could not load scenario: '+e.message;}
+  });
+  $('gaLcReset').addEventListener('click',()=>{stop();fields.crop.value='wheat';fields.variety.value='';fields.date.value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);fields.area.value=1;fields.soil.value='sandyloam';fields.moisture.value=65;fields.tmin.value=18;fields.tmax.value=30;fields.rain.value=2;fields.rad.value=18;fields.irrigation.value='auto';fields.fertn.value=80;fields.mulch.value=0;fields.speed.value=1000;series=[];cursor=0;$('gaLcDay').textContent='—';$('gaLcStage').textContent='—';$('gaLcWater').textContent='—';$('gaLcBiomass').textContent='—';$('gaLcFarmVisual').innerHTML='<div class="ga-lc-status">Start a simulation to render the crop and field response.</div>';$('gaLcFarmPills').innerHTML='';$('gaLcStagebar').innerHTML='';$('gaLcRows').innerHTML='<tr><td colspan="8" style="text-align:left">No simulation yet.</td></tr>';$('gaLcChartWrap').innerHTML='<p class="ga-lc-note">Start a simulation to generate charts from calculated daily outputs.</p>';$('gaLcReport').innerHTML='<div class="ga-lc-status">Run the lifecycle to see results.</div>';$('gaLcInspect').disabled=true;$('gaLcInspectOut').textContent='—';$('gaLcStatus').textContent='Inputs reset. Start a new simulation when ready.';});
+  fields.crop.addEventListener('change',()=>{const c=crops[fields.crop.value];$('gaLcStatus').textContent=`Selected ${c.label}. Default parameters remain provisional; start/recalculate to run this crop.`;});
+  window.GroundAid=window.GroundAid||{};
+  window.GroundAid.CropLifecycle={
+    version:'reduced-order-lifecycle-v1',
+    crops:crops,
+    soils:soils,
+    simulate:(inputs)=>simulate({...inputs,crop:crops[inputs.cropId],soil:soils[inputs.soilId]}),
+    getResults:()=>({config,records:series.slice(),cursor})
+  };
+  // Render the default scenario immediately; changing inputs and recalculating replaces it.
+  run();
 });
 })();
 </script>
